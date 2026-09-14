@@ -27,6 +27,7 @@ The root directory follows senior-level organization principles:
 ```
 ├── README.md             # Project documentation
 ├── LICENSE               # MIT License
+├── NOTICE                # Third-party components & licenses
 └── next-env.d.ts         # Next.js TypeScript declarations (auto-generated)
 ```
 

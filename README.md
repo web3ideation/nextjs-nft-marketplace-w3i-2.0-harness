@@ -634,7 +634,7 @@ benchmark yet — treat any figure for those as an estimate.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Copyright (c) 2025-2026 Ideation Port UG (haftungsbeschränkt). This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. Third-party components and their licenses are listed in [NOTICE](NOTICE).
 
 ## 🙏 Acknowledgments
 
