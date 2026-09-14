@@ -1,6 +1,7 @@
 {
   "name": "nextjs-nft-marketplace-w3i-2.0",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "engines": {
     "node": ">=20.19.0",

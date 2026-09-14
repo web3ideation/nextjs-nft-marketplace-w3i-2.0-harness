@@ -1,0 +1,134 @@
+NOTICE
+
+nextjs-nft-marketplace-w3i-2.0
+Copyright (c) 2025-2026 Ideation Port UG (haftungsbeschränkt)
+
+This project uses the following third-party libraries
+(direct production dependencies from package.json):
+
+1. @apollo/client
+   - License: MIT
+   - Repository: https://github.com/apollographql/apollo-client
+
+2. @heroicons/react
+   - License: MIT
+   - Repository: https://github.com/tailwindlabs/heroicons
+
+3. @rainbow-me/rainbowkit
+   - License: MIT
+   - Repository: https://github.com/rainbow-me/rainbowkit
+
+4. @sentry/nextjs
+   - License: MIT
+   - Repository: https://github.com/getsentry/sentry-javascript
+
+5. @tailwindcss/forms
+   - License: MIT
+   - Repository: https://github.com/tailwindlabs/tailwindcss-forms
+
+6. @tanstack/react-query
+   - License: MIT
+   - Repository: https://github.com/TanStack/query
+
+7. @tanstack/react-query-devtools
+   - License: MIT
+   - Repository: https://github.com/TanStack/query
+
+8. apollo3-cache-persist
+   - License: MIT
+   - Repository: https://github.com/apollographql/apollo-cache-persist
+
+9. autoprefixer
+   - License: MIT
+   - Repository: https://github.com/postcss/autoprefixer
+
+10. clsx
+   - License: MIT
+   - Repository: https://github.com/lukeed/clsx
+
+11. graphql
+   - License: MIT
+   - Repository: https://github.com/graphql/graphql-js
+
+12. graphql-ws
+   - License: MIT
+   - Repository: https://github.com/enisdenjo/graphql-ws
+
+13. ioredis
+   - License: MIT
+   - Repository: https://github.com/luin/ioredis
+
+14. lru-cache
+   - License: BlueOak-1.0.0
+   - Repository: https://github.com/isaacs/node-lru-cache
+
+15. mongodb
+   - License: Apache-2.0
+   - Repository: https://github.com/mongodb/node-mongodb-native
+
+16. next
+   - License: MIT
+   - Repository: https://github.com/vercel/next.js
+
+17. pino
+   - License: MIT
+   - Repository: https://github.com/pinojs/pino
+
+18. pino-pretty
+   - License: MIT
+   - Repository: https://github.com/pinojs/pino-pretty
+
+19. postcss
+   - License: MIT
+   - Repository: https://github.com/postcss/postcss
+
+20. react
+   - License: MIT
+   - Repository: https://github.com/facebook/react
+
+21. react-dom
+   - License: MIT
+   - Repository: https://github.com/facebook/react
+
+22. react-error-boundary
+   - License: MIT
+   - Repository: https://github.com/bvaughn/react-error-boundary
+
+23. sharp
+   - License: Apache-2.0
+   - Repository: https://github.com/lovell/sharp
+   - Note: The prebuilt binary packages `@img/sharp-libvips-*` that sharp pulls
+     in during installation are licensed under LGPL-3.0-or-later.
+
+24. tailwind-merge
+   - License: MIT
+   - Repository: https://github.com/dcastil/tailwind-merge
+
+25. tailwindcss
+   - License: MIT
+   - Repository: https://github.com/tailwindlabs/tailwindcss
+
+26. viem
+   - License: MIT
+   - Repository: https://github.com/wevm/viem
+
+27. wagmi
+   - License: MIT
+   - Repository: https://github.com/wevm/wagmi
+
+28. zod
+   - License: MIT
+   - Repository: https://github.com/colinhacks/zod
+
+
+External services (not npm packages)
+
+This project reads data from external services that are not distributed as
+part of this codebase and remain subject to their respective terms:
+
+- The Graph (Subgraph)
+  - Marketplace listing data is queried from a subgraph hosted on The Graph.
+  - Website: https://thegraph.com
+
+- NFT Data Platform
+  - Source for token details, collections, wallet inventory, and search.
