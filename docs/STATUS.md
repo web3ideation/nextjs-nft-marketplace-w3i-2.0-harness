@@ -6,11 +6,21 @@ Einzige Quelle für Phasenstand und Scope des Harness. `CLAUDE.md` und
 
 ## Aktuelle Phase
 
-Die Harness-Adaption ist mit Phase 3 abgeschlossen. Nächster Schritt ist keine
-Harness-Arbeit mehr, sondern die inhaltliche: die Spezifikation
-`specs/marktplatz-fertigstellung.md` fertigstellen, daraus Plan v1, Advisor-Pass
-(`architecture-advisor`), Plan v2, erst dann Arbeitspakete als
-Handoff-Verträge unter `state/tasks/`.
+Die Harness-Adaption ist mit Phase 3 abgeschlossen. Laufend ist die inhaltliche
+Arbeit: die Anbindung der NFT Data Platform nach
+`state/plan-v1-plattform-integration.md` (Pakete A0–A10). Der Abbau der
+Altpfade ist bewusst getrennt und hinter eigenen Toren:
+`state/plan-v1-abbau-altpfade.md` (R0–R4).
+
+Stand 25.09.2026: Spec v4 liegt vor, Plan v1 liegt in zwei Dateien vor, die
+drei Auflagen aus Plan v1 Abschnitt 1 sind abgearbeitet (Iteration 0). Nächstes
+Arbeitspaket ist **A1 — Transport und Signierung**, als Handoff-Vertrag unter
+`state/tasks/`.
+
+Ein Advisor-Pass (`architecture-advisor`) auf Plan v1 ist **nicht** gelaufen.
+Die beiden Plandateien tragen zwar je ein `GO_MIT_AUFLAGEN` im Kopf, aber keinen
+Nachweis, wer es vergeben hat. Wer das nachholen will, tut es vor A3 — ab dort
+werden Datenformen festgeschrieben.
 
 ## Erledigt
 
@@ -46,5 +56,13 @@ Handoff-Verträge unter `state/tasks/`.
 - Fachlicher Scope (was am Marktplatz selbst gebaut wird): siehe
   `specs/marktplatz-fertigstellung.md` — Ziel, V-Aussagen, Nicht-Ziele,
   Constraints, offene Fragen stehen dort, nicht hier.
+- Vorbedingungen für die Plattform-Anbindung (Paket A0): Zugangsdaten
+  `alpha-read` und `alpha-ops`, ausgehende IPs für die Allowlist, erreichbare
+  Plattform-Instanz, Prüfstand-Commit (V37). Ohne sie ist V11 (409/200) nicht
+  abnehmbar; die Pakete selbst sind baubar. Einzelheiten im Plan, Abschnitt 3.
+- Entscheidungen E1 (Befüllung des Rückfallwegs `nft_metadata`) und E2
+  (Stabilitätszeitraum vor dem Abbau) sind offen und tragen die Tore T1/T2 des
+  Abbauplans — definiert in `state/plan-v1-plattform-integration.md`
+  Abschnitt 9. E3 (Prüfweg der Integrationstests) ist entschieden.
 - Betriebliche Detailliste (Hardening, Observability, Reliability): siehe
   `docs/development/PROJECT_CHECKLIST.md`.
