@@ -43,6 +43,7 @@ import { logger } from '@/lib/logger';
 import { getPlatformConfig, type CredentialKind, type PlatformCredentials } from '@/lib/nft-data-platform/config';
 import {
     normalizePlatformFailure,
+    PlatformRateLimitError,
     PlatformResponseError,
     PlatformTimeoutError,
     PlatformUnavailableError,
@@ -166,17 +167,30 @@ function nextTimestampSeconds(nowMs: number, previous: string | null): string {
  * @param response - Antwort der Plattform
  * @returns geparster Wert und ob der Body überhaupt JSON war
  */
-async function readJsonBody(response: Response): Promise<{ value: unknown; parsed: boolean }> {
-    const text = await response.text();
+async function readJsonBody(
+    response: Response
+): Promise<{ value: unknown; parsed: boolean; readFailed: boolean }> {
+    let text: string;
+
+    try {
+        text = await response.text();
+    } catch {
+        // Das Lesen selbst kann scheitern: Verbindungsabbruch mitten im Body,
+        // oder das Timeout-Signal feuert nach den Headern. Ohne diesen Zweig
+        // flöge der Fehler am ganzen Normalisierungs- und Wiederholungsapparat
+        // vorbei und käme beim Aufrufer als unbekannter Wurf an — also als 500
+        // ohne Rückfall, obwohl es ein gewöhnlicher Ausfall ist.
+        return { value: null, parsed: false, readFailed: true };
+    }
 
     if (text.trim() === '') {
-        return { value: null, parsed: true };
+        return { value: null, parsed: true, readFailed: false };
     }
 
     try {
-        return { value: JSON.parse(text), parsed: true };
+        return { value: JSON.parse(text), parsed: true, readFailed: false };
     } catch {
-        return { value: null, parsed: false };
+        return { value: null, parsed: false, readFailed: false };
     }
 }
 
@@ -259,6 +273,17 @@ function combineWithTimeout(
  * Sendet genau einen signierten Versuch und gibt den Platz im
  * Nebenläufigkeitsdeckel sofort wieder frei.
  *
+ * **Reihenfolge ist hier der ganze Punkt:** erst der Platz, dann Zeitstempel,
+ * Signatur und Timeout-Uhr. Die erste Fassung hatte es umgekehrt, und das war
+ * falsch an genau der Stelle, für die der Deckel gebaut ist — sobald er bremst
+ * (also wenn die Plattform langsam ist), lief die Timeout-Uhr während der
+ * Wartezeit mit. Bei einer Wartezeit über dem Timeout bekam `fetch` ein schon
+ * abgebrochenes Signal, und der Fehler behauptete „Plattform antwortet nicht
+ * innerhalb von 10000 ms", obwohl nie eine Anfrage rausging. Bei über 300
+ * Sekunden Wartezeit wäre zusätzlich der mitgeschleppte Zeitstempel abgelaufen
+ * und hätte den Uhrdrift-Alarm aus V16 ausgelöst — ein Fehlalarm auf dem Kanal,
+ * der die Uhr überwacht.
+ *
  * @param params - alles, was für diesen einen Versuch nötig ist
  * @returns Antwort oder Transportfehler, nie ein Wurf außer bei Abbruch
  */
@@ -267,48 +292,58 @@ async function sendOnce(params: {
     canonicalPath: string;
     method: 'GET' | 'POST';
     bodyString: string;
-    timestamp: string;
+    /** Wird NACH dem Platz aufgerufen; hält die Monotonie der Schleife fest. */
+    nextTimestamp: () => string;
+    /** Wird NACH dem Platz aufgerufen, kurz vor dem Senden. */
+    onSending: () => void;
     credentialKind: CredentialKind;
     credentials: PlatformCredentials;
     timeoutMs: number;
     callerSignal: AbortSignal | undefined;
     doFetch: typeof fetch;
 }): Promise<AttemptOutcome> {
-    const headers: Record<string, string> = {
-        accept: 'application/json',
-        ...buildAuthHeaders({
-            method: params.method,
-            path: params.canonicalPath,
-            body: params.bodyString,
-            timestamp: params.timestamp,
-            credentials: params.credentials,
-        }),
-    };
-
-    if (params.bodyString !== '') {
-        headers['content-type'] = 'application/json';
-    }
-
-    const { signal, dispose } = combineWithTimeout(params.timeoutMs, params.callerSignal);
     const release = await acquireSlot(params.credentialKind, params.credentials.concurrency);
 
     try {
-        const response = await params.doFetch(params.url, {
-            method: params.method,
-            headers,
-            body: params.bodyString === '' ? undefined : params.bodyString,
-            signal,
-            cache: 'no-store',
-        });
+        const timestamp = params.nextTimestamp();
 
-        return { ok: true, response };
-    } catch (error) {
-        return {
-            ok: false,
-            error: toTransportError(error, params.timeoutMs, params.callerSignal?.aborted === true),
+        const headers: Record<string, string> = {
+            accept: 'application/json',
+            ...buildAuthHeaders({
+                method: params.method,
+                path: params.canonicalPath,
+                body: params.bodyString,
+                timestamp,
+                credentials: params.credentials,
+            }),
         };
+
+        if (params.bodyString !== '') {
+            headers['content-type'] = 'application/json';
+        }
+
+        const { signal, dispose } = combineWithTimeout(params.timeoutMs, params.callerSignal);
+        params.onSending();
+
+        try {
+            const response = await params.doFetch(params.url, {
+                method: params.method,
+                headers,
+                body: params.bodyString === '' ? undefined : params.bodyString,
+                signal,
+                cache: 'no-store',
+            });
+
+            return { ok: true, response };
+        } catch (error) {
+            return {
+                ok: false,
+                error: toTransportError(error, params.timeoutMs, params.callerSignal?.aborted === true),
+            };
+        } finally {
+            dispose();
+        }
     } finally {
-        dispose();
         release();
     }
 }
@@ -320,7 +355,11 @@ async function sendOnce(params: {
  * @param options - Methode, Pfad, Zugangsdatensatz, optional Body und Timeout
  * @param deps - einspeisbare Umgebung für Tests (fetch, sleep, now, random)
  * @returns geparster Body, Statuscode und Zahl der Versuche
- * @throws PlatformError in genau einer der Ausprägungen aus errors.ts
+ * @throws PlatformError in einer der Ausprägungen aus errors.ts — der
+ *   Regelfall. Zwei Ausnahmen, bewusst: der Abbruch durch `options.signal`
+ *   wird roh durchgereicht (der Aufrufer wollte es so, das ist kein
+ *   Plattform-Fehler), und ein nicht serialisierbarer `body` wirft den
+ *   `TypeError` aus `JSON.stringify`, bevor überhaupt etwas gesendet wird.
  */
 export async function requestPlatform(
     options: PlatformRequestOptions,
@@ -337,6 +376,17 @@ export async function requestPlatform(
     const timeoutMs = options.timeoutMs ?? config.timeoutMs;
     const bodyString = serializeBody(options.body);
 
+    // Ein Pfad ohne führenden Schrägstrich würde beim Zusammensetzen im
+    // Hostnamen landen (`https://platform.exampleapi/v1`) — und die Anfrage
+    // ginge an einen fremden Host, nicht an einen falschen Pfad.
+    if (!options.path.startsWith('/')) {
+        throw new PlatformResponseError(
+            `Pfad muss mit "/" beginnen, erhalten: ${options.path}`,
+            null,
+            null
+        );
+    }
+
     // Über die URL gehen, damit der signierte Pfad genau der ist, den der Server
     // sieht — inklusive normalisierter Mehrfach-Schrägstriche und Query.
     const url = new URL(`${config.baseUrl}${options.path}`);
@@ -349,26 +399,48 @@ export async function requestPlatform(
         null
     );
 
+    /**
+     * Nächster Zeitstempel, streng monoton über die Versuche dieser Anfrage.
+     * Wird von `sendOnce` erst nach dem Platz im Deckel aufgerufen, damit die
+     * Signatur nicht schon während der Wartezeit altert.
+     */
+    const nextTimestamp = (): string => {
+        timestamp = nextTimestampSeconds(now(), timestamp);
+        return timestamp;
+    };
+
     for (let attempt = 1; attempt <= config.maxAttempts; attempt += 1) {
         const rateLimitWaitMs = getRateLimitWaitMs(options.credentials, now());
+
         if (rateLimitWaitMs > 0) {
+            // Eine Sperre bis zur Fenstergrenze kann knapp eine Minute dauern.
+            // Eine Web-Anfrage so lange hängen zu lassen ist schlechter, als
+            // sofort den degradierten Pfad zu nehmen — A8 hält genau dafür
+            // `allowLocalFallback: true` bereit.
+            if (rateLimitWaitMs > timeoutMs) {
+                throw new PlatformRateLimitError(
+                    `Fensterlimit erschöpft, Wartezeit ${rateLimitWaitMs} ms über dem Budget von ${timeoutMs} ms`,
+                    'rate_limit_exceeded'
+                );
+            }
+
             await sleep(rateLimitWaitMs);
         }
 
-        timestamp = nextTimestampSeconds(now(), timestamp);
         const startedAt = now();
-
-        // Vor dem Senden zählen, nicht nach dem Erfolg: die Plattform zählt
-        // ebenfalls Versuche, und ein gescheiterter Versuch hat das Fenster
-        // genauso belastet wie ein gelungener.
-        recordRequestSent(options.credentials, startedAt);
 
         const outcome = await sendOnce({
             url,
             canonicalPath,
             method: options.method,
             bodyString,
-            timestamp,
+            nextTimestamp,
+            // Gezählt wird unmittelbar vor dem Senden und nach dem Platz: die
+            // Plattform zählt Versuche, und ein Versuch, der in der
+            // Warteschlange steckt, hat ihr Fenster noch nicht belastet.
+            onSending: () => {
+                recordRequestSent(options.credentials, now());
+            },
             credentialKind: options.credentials,
             credentials,
             timeoutMs,
@@ -401,6 +473,35 @@ export async function requestPlatform(
         const { response } = outcome;
         recordRateLimitHeaders(options.credentials, response.headers, now());
         const body = await readJsonBody(response);
+
+        if (body.readFailed) {
+            // Der Body brach beim Lesen ab. Behandelt wie ein Ausfall, nicht wie
+            // eine kaputte Antwort: wir haben nichts bekommen, nicht etwas
+            // Unverständliches — also wiederholbar und mit Rückfall.
+            lastError = new PlatformUnavailableError(
+                `Antwort der Plattform brach beim Lesen ab (HTTP ${response.status})`,
+                response.status,
+                null
+            );
+
+            logger.warn(
+                {
+                    credentials: options.credentials,
+                    method: options.method,
+                    path: canonicalPath,
+                    attempt,
+                    status: response.status,
+                },
+                'nft_data_platform_body_read_failed'
+            );
+
+            if (attempt === config.maxAttempts) {
+                throw lastError;
+            }
+
+            await sleep(backoffMs(attempt, randomUnit));
+            continue;
+        }
 
         logger.debug(
             {

@@ -32,6 +32,8 @@
  *   | PlatformConfigError        | 503  | PLATFORM_UNAVAILABLE      | error     | ja       |
  *   | PlatformReplayError        | 500  | INTERNAL_ERROR            | error     | nein     |
  *   | PlatformResponseError      | 502  | PLATFORM_RESPONSE_INVALID | error     | nein     |
+ *   | davon: httpStatus 404      | 404  | TOKEN_NOT_INDEXED         | debug     | nein     |
+ *   | anderer PlatformError      | 503  | PLATFORM_UNAVAILABLE      | error     | ja       |
  *   | unbekannter Wurf           | 500  | INTERNAL_ERROR            | error     | nein     |
  *
  * - **Ein `429` der Plattform wird NIE als `429` weitergegeben.** Erschöpft ist
@@ -44,6 +46,7 @@
  */
 
 import {
+    isPlatformError,
     PlatformAuthError,
     PlatformConfigError,
     PlatformRateLimitError,
@@ -116,13 +119,37 @@ const FALLBACK_MESSAGE =
  * Nimmt `unknown` und nicht `PlatformError`, damit ein unerwarteter Wurf hier
  * landen kann statt ungefiltert beim Browser. Wirft selbst nie.
  *
- * Die Reihenfolge der Prüfungen ist bedeutsam: `PlatformConfigError` erbt von
- * `PlatformError` und muss vor einer allgemeineren Prüfung stehen.
+ * Die Reihenfolge der Prüfungen ist bedeutsam, an zwei Stellen: der 404-Fall
+ * steht vor der allgemeinen `PlatformResponseError`-Prüfung (er ist eine
+ * Unterform davon), und die Blattklassen stehen vor dem abschließenden
+ * `isPlatformError`-Zweig. Letzterer fängt eine künftige achte Fehlerklasse auf
+ * und behandelt sie als Ausfall mit Rückfall, statt sie in den 500er-Default
+ * fallen zu lassen — ein neuer Plattform-Fehler ist wahrscheinlicher ein
+ * Ausfall als ein Programmierfehler bei uns.
  *
  * @param error - gefangener Wert, beliebigen Typs
  * @returns Status, Code, Meldung, Protokollstufe und Rückfall-Erlaubnis
  */
 export function translatePlatformError(error: unknown): PlatformFailureResponse {
+    // Die 404-Zeile der Tabelle. Sie fehlte in der ersten Fassung, und das
+    // verwaiste `'debug'` in der logLevel-Union war der Beleg dafür: ein
+    // Protokoll-Niveau ohne Produzenten. Folge war, dass ein nicht indiziertes
+    // Token über PlatformResponseError zu 502 PLATFORM_RESPONSE_INVALID wurde —
+    // ohne Rückfall, statt zu V5. Die Prüfung steht vor der allgemeinen
+    // PlatformResponseError-Prüfung, weil 404 eine Unterform davon ist.
+    if (error instanceof PlatformResponseError && error.httpStatus === 404) {
+        return {
+            httpStatus: 404,
+            code: PLATFORM_RESPONSE_CODES.notIndexed,
+            message: 'Dieses NFT ist noch nicht erfasst.',
+            logLevel: 'debug',
+            // Kein Rückfall: „noch nicht indiziert" ist kein Ausfall, sondern
+            // eine Auskunft. Der Aufrufer baut daraus den V5-Antwortkörper mit
+            // buildTokenNotIndexedPayload().
+            allowLocalFallback: false,
+        };
+    }
+
     if (error instanceof PlatformResponseError) {
         return {
             httpStatus: 502,
@@ -176,6 +203,21 @@ export function translatePlatformError(error: unknown): PlatformFailureResponse 
             code: PLATFORM_RESPONSE_CODES.unavailable,
             message: FALLBACK_MESSAGE,
             logLevel: 'warn',
+            allowLocalFallback: true,
+        };
+    }
+
+    // Auffangnetz für eine künftige Fehlerklasse aus errors.ts, die hier noch
+    // keinen Zweig hat. Als Ausfall behandelt, nicht als internen Fehler: ein
+    // neuer PlatformError beschreibt mit hoher Wahrscheinlichkeit eine Störung
+    // beim Upstream, und ein Rückfall ist dann besser als eine Fehlerseite.
+    // Protokollstufe error, damit die Lücke auffällt und geschlossen wird.
+    if (isPlatformError(error)) {
+        return {
+            httpStatus: 503,
+            code: PLATFORM_RESPONSE_CODES.unavailable,
+            message: FALLBACK_MESSAGE,
+            logLevel: 'error',
             allowLocalFallback: true,
         };
     }

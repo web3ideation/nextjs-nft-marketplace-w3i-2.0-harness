@@ -274,10 +274,17 @@ describe('requestPlatform — 409 replayed_request (V11, Mechanik)', () => {
 });
 
 describe('requestPlatform — 429 gegen 409 unterschieden', () => {
-    it('wartet vor der Wiederholung, statt sofort erneut zu senden', async () => {
+    it('wartet vor der Wiederholung, statt sofort erneut zu senden — wenn die Wartezeit ins Budget passt', async () => {
+        // `timeoutMs` muss über der Wartezeit bis zur Fenstergrenze liegen
+        // (bei stehender Testuhr 20,25 s), sonst greift der Fail-Fast-Pfad aus
+        // Review-Befund 5. Das ist keine Testkosmetik, sondern die Bedingung,
+        // unter der Warten überhaupt erlaubt ist.
         const { sleeps, deps } = harness([failure(429, 'rate_limit_exceeded'), success({ ok: true })]);
 
-        const result = await requestPlatform({ method: 'GET', path: '/api/v1/x', credentials: 'read' }, deps);
+        const result = await requestPlatform(
+            { method: 'GET', path: '/api/v1/x', credentials: 'read', timeoutMs: 30_000 },
+            deps
+        );
 
         expect(result.attempts).toBe(2);
         expect(sleeps.length).toBeGreaterThan(0);
@@ -287,7 +294,10 @@ describe('requestPlatform — 429 gegen 409 unterschieden', () => {
     it('sperrt das Fenster bis zur nächsten Grenze, weil die Antwort keine Wartezeit nennt', async () => {
         const { deps } = harness([failure(429, 'rate_limit_exceeded'), success({ ok: true })]);
 
-        await requestPlatform({ method: 'GET', path: '/api/v1/x', credentials: 'read' }, deps);
+        await requestPlatform(
+            { method: 'GET', path: '/api/v1/x', credentials: 'read', timeoutMs: 30_000 },
+            deps
+        );
 
         const snapshot = getRateLimitSnapshot('read');
         expect(snapshot.blockedUntilMs).not.toBeNull();
@@ -492,6 +502,131 @@ describe('requestPlatform — eigene Fensterzählung (Advisor-Befund 7)', () => 
     });
 });
 
+describe('requestPlatform — Korrekturen aus dem Code-Review', () => {
+    /**
+     * Baut eine Antwort, deren Body-Strom beim Lesen abbricht.
+     *
+     * Genau der Fall, den die erste Fassung nicht abdeckte: alle Testantworten
+     * entstanden aus einer Zeichenkette und konnten beim Lesen nicht scheitern.
+     *
+     * @returns Response mit fehlerhaftem Body-Strom
+     */
+    function bodyReadFailure(): Response {
+        const stream = new ReadableStream({
+            start(controller) {
+                controller.error(new Error('Verbindung mitten im Body abgebrochen'));
+            },
+        });
+
+        return new Response(stream, { status: 200 });
+    }
+
+    it('behandelt einen abbrechenden Body-Strom als Ausfall und wiederholt ihn (Befund 2)', async () => {
+        const { calls, deps } = harness([bodyReadFailure(), success({ ok: true })]);
+
+        const result = await requestPlatform({ method: 'GET', path: '/api/v1/x', credentials: 'read' }, deps);
+
+        expect(result.attempts).toBe(2);
+        expect(result.data).toEqual({ ok: true });
+        expect(calls).toHaveLength(2);
+    });
+
+    it('meldet einen dauerhaft abbrechenden Body als PlatformUnavailableError, nicht als unbekannten Wurf (Befund 2)', async () => {
+        const { deps } = harness([bodyReadFailure(), bodyReadFailure(), bodyReadFailure()]);
+
+        // Vorher flog die DOMException am ganzen Normalisierungsapparat vorbei
+        // und wurde beim Aufrufer zu 500 ohne Rückfall — obwohl es ein
+        // gewöhnlicher Ausfall mit erlaubtem Rückfall ist.
+        await expect(
+            requestPlatform({ method: 'GET', path: '/api/v1/x', credentials: 'read' }, deps)
+        ).rejects.toBeInstanceOf(PlatformUnavailableError);
+    });
+
+    it('bildet den Zeitstempel erst NACH dem Platz im Deckel (Befund 3)', async () => {
+        process.env.NFT_API_READ_CONCURRENCY = '1';
+        resetPlatformConfigCache();
+
+        let clock = FROZEN_NOW_MS;
+        const calls: RecordedCall[] = [];
+        let releaseFirst: (() => void) | null = null;
+
+        const deps: PlatformTransportDeps = {
+            fetchImpl: async (input, init) => {
+                calls.push({
+                    url: String(input),
+                    method: init?.method ?? 'GET',
+                    headers: readHeaders(init),
+                    body: null,
+                });
+
+                if (calls.length === 1) {
+                    await new Promise<void>((resolve) => {
+                        releaseFirst = resolve;
+                    });
+                }
+
+                return success({ ok: true });
+            },
+            sleepImpl: async () => undefined,
+            nowMs: () => clock,
+            randomUnit: () => 0.5,
+        };
+
+        const first = requestPlatform({ method: 'GET', path: '/api/v1/a', credentials: 'read' }, deps);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+        const second = requestPlatform({ method: 'GET', path: '/api/v1/b', credentials: 'read' }, deps);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+        // Die zweite Anfrage steht in der Warteschlange. Jetzt vergeht Zeit.
+        expect(calls).toHaveLength(1);
+        clock = FROZEN_NOW_MS + 5_000;
+
+        releaseFirst?.();
+        await Promise.all([first, second]);
+
+        // Der Zeitstempel der zweiten Anfrage muss die vergangene Zeit zeigen.
+        // Vorher wurde er vor dem Warten gebildet und wäre bei langer Wartezeit
+        // abgelaufen — bis zum Fehlalarm auf dem Uhrdrift-Kanal.
+        expect(calls).toHaveLength(2);
+        expect(calls[0].headers['x-timestamp']).toBe('1750000000');
+        expect(calls[1].headers['x-timestamp']).toBe('1750000005');
+    });
+
+    it('nimmt sofort den degradierten Pfad, statt bis zur Fenstergrenze zu schlafen (Befund 5)', async () => {
+        const { sleeps, deps } = harness([
+            failure(429, 'rate_limit_exceeded'),
+            success({ ok: true }),
+            success({ ok: true }),
+        ]);
+
+        // Erster Aufruf: 429, sperrt das Fenster bis zur nächsten Grenze.
+        await expect(
+            requestPlatform({ method: 'GET', path: '/api/v1/x', credentials: 'read', timeoutMs: 1_000 }, deps)
+        ).rejects.toBeInstanceOf(PlatformRateLimitError);
+
+        const sleepsVorher = sleeps.length;
+
+        // Zweiter Aufruf trifft die Sperre. Die Wartezeit läge über dem Budget,
+        // also wird nicht geschlafen, sondern geworfen — eine Web-Anfrage soll
+        // nicht eine Minute hängen, wenn A8 einen Rückfall vorsieht.
+        await expect(
+            requestPlatform({ method: 'GET', path: '/api/v1/y', credentials: 'read', timeoutMs: 1_000 }, deps)
+        ).rejects.toBeInstanceOf(PlatformRateLimitError);
+
+        expect(sleeps.length).toBe(sleepsVorher);
+    });
+
+    it('weist einen Pfad ohne führenden Schrägstrich ab, statt den Hostnamen zu verbiegen (Befund 9)', async () => {
+        const { calls, deps } = harness([success({ ok: true })]);
+
+        await expect(
+            requestPlatform({ method: 'GET', path: 'api/v1/x', credentials: 'read' }, deps)
+        ).rejects.toBeInstanceOf(PlatformResponseError);
+        expect(calls).toHaveLength(0);
+    });
+});
+
 describe('requestPlatform — Flag aus', () => {
     it('kommt nicht einmal zum Senden, wenn das Flag aus ist', async () => {
         delete process.env.NFT_DATA_PLATFORM_ENABLED;
@@ -548,7 +683,9 @@ describe('requestPlatform — Nebenläufigkeitsdeckel', () => {
 
         await Promise.all(pending);
 
-        expect(peak).toBeLessThanOrEqual(2);
+        // `toBe`, nicht `toBeLessThanOrEqual`: eine Implementierung, die
+        // fälschlich auf eins serialisiert, wäre sonst ebenfalls grün.
+        expect(peak).toBe(2);
         expect(getRateLimitSnapshot('read').active).toBe(0);
         expect(getRateLimitSnapshot('read').queued).toBe(0);
     });

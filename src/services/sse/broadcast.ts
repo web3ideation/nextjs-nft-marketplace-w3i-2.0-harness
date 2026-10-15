@@ -6,6 +6,7 @@
 
 import type Redis from 'ioredis';
 import { getRedisClientIfAvailable } from '@/lib/redis/client';
+import { logger } from '@/lib/logger';
 import { devLog } from '@/utils';
 
 // Store all active SSE connections
@@ -165,7 +166,17 @@ export function addConnection(controller: ReadableStreamDefaultController): void
     connections.add(controller);
     devLog.info(`[SSE] Client connected (${connections.size} total)`);
 
-    void ensureRedisSubscriber();
+    // Kein nacktes `void`: seit getSseChannel() wirft, wäre das eine
+    // unbehandelte Rejection beim ersten SSE-Client — und der Prozess-Handler
+    // in instrumentation.ts hängt hinter `isDev`, greift in Produktion also
+    // nicht. Der lokale Broadcast läuft ohne Subscriber weiter, deshalb ist
+    // Protokollieren und Weitermachen hier richtig, nicht Abbrechen.
+    void ensureRedisSubscriber().catch((error: unknown) => {
+        logger.error(
+            { error: error instanceof Error ? error.message : String(error) },
+            'sse_subscriber_init_failed'
+        );
+    });
 }
 
 /**
@@ -220,8 +231,25 @@ export async function broadcastMarketplaceEvent(event: any): Promise<void> {
         event,
     };
 
+    // Den Kanal VOR dem try lesen. Innerhalb würde der Catch unten den
+    // Konfigurationsfehler als "publish failed" protokollieren — über
+    // devLog.warn, und das ist in Produktion stumm (dev-log.ts: isDev).
+    // Dann wäre der instanzübergreifende SSE-Pfad tot, während die lokalen
+    // Clients weiter Ereignisse bekommen: genau der Fehler, der sich nicht als
+    // Fehler zeigt, den getSseChannel() verhindern soll.
+    let channel: string;
     try {
-        await redis.publish(getSseChannel(), JSON.stringify(envelope));
+        channel = getSseChannel();
+    } catch (error) {
+        logger.error(
+            { error: error instanceof Error ? error.message : String(error) },
+            'sse_channel_not_configured'
+        );
+        return;
+    }
+
+    try {
+        await redis.publish(channel, JSON.stringify(envelope));
     } catch (error) {
         devLog.warn('[SSE] Redis publish failed, continuing with local broadcast only:', error instanceof Error ? error.message : error);
     }

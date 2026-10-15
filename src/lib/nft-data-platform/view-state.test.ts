@@ -122,6 +122,39 @@ describe('translatePlatformError — die Fälle ohne Rückfall', () => {
     });
 });
 
+describe('translatePlatformError — die 404-Zeile der Tabelle (Review-Befund 6)', () => {
+    it('übersetzt einen 404 der Plattform zu TOKEN_NOT_INDEXED, nicht zu 502', () => {
+        const result = translatePlatformError(new PlatformResponseError('nicht gefunden', 404, null));
+
+        expect(result.httpStatus).toBe(404);
+        expect(result.code).toBe(PLATFORM_RESPONSE_CODES.notIndexed);
+        expect(result.logLevel).toBe('debug');
+    });
+
+    it('erlaubt für den 404 keinen Rückfall — "noch nicht indiziert" ist kein Ausfall, sondern eine Auskunft', () => {
+        const result = translatePlatformError(new PlatformResponseError('nicht gefunden', 404, null));
+
+        expect(result.allowLocalFallback).toBe(false);
+    });
+
+    it('lässt andere 4xx weiter als PLATFORM_RESPONSE_INVALID durchgehen', () => {
+        const result = translatePlatformError(new PlatformResponseError('kaputt', 400, null));
+
+        expect(result.code).toBe(PLATFORM_RESPONSE_CODES.responseInvalid);
+        expect(result.httpStatus).toBe(502);
+    });
+
+    it('erzeugt die Protokollstufe debug — vorher hatte sie keinen Produzenten', () => {
+        const stufen = [
+            translatePlatformError(new PlatformResponseError('x', 404, null)).logLevel,
+            translatePlatformError(new PlatformUnavailableError('x', 503, null)).logLevel,
+            translatePlatformError(new PlatformAuthError('x', 401, null)).logLevel,
+        ];
+
+        expect(stufen).toEqual(['debug', 'warn', 'error']);
+    });
+});
+
 describe('translatePlatformError — alles Übrige', () => {
     it('übersetzt einen gewöhnlichen Error zu 500, statt ihn durchzulassen', () => {
         const result = translatePlatformError(new Error('irgendwas ging schief'));
@@ -135,11 +168,22 @@ describe('translatePlatformError — alles Übrige', () => {
         expect(translatePlatformError(thrown).httpStatus).toBe(500);
     });
 
-    it('fängt auch einen rohen PlatformError auf, der keine Unterklasse ist', () => {
+    it('behandelt einen rohen PlatformError als Ausfall mit Rückfall, nicht als internen Fehler', () => {
+        // Auffangnetz für eine kuenftige achte Fehlerklasse: ein neuer
+        // PlatformError beschreibt mit hoher Wahrscheinlichkeit eine Stoerung
+        // beim Upstream. Ein Rueckfall ist dann besser als eine Fehlerseite —
+        // und die Protokollstufe error laesst die Luecke auffallen.
         const result = translatePlatformError(new PlatformError('unbestimmt', { httpStatus: 418 }));
 
-        expect(result.httpStatus).toBe(500);
-        expect(result.code).toBe(PLATFORM_RESPONSE_CODES.internal);
+        expect(result.httpStatus).toBe(503);
+        expect(result.code).toBe(PLATFORM_RESPONSE_CODES.unavailable);
+        expect(result.logLevel).toBe('error');
+        expect(result.allowLocalFallback).toBe(true);
+    });
+
+    it('unterscheidet den rohen PlatformError vom gewöhnlichen Error', () => {
+        expect(translatePlatformError(new PlatformError('x')).httpStatus).toBe(503);
+        expect(translatePlatformError(new Error('x')).httpStatus).toBe(500);
     });
 
     it('deckt alle sieben Fehlerklassen aus errors.ts ab — kommt eine achte dazu, fällt sie in den Default', () => {

@@ -80,8 +80,15 @@ type CredentialState = {
     sentInWindow: number;
     /** Beginn des Fensters, in dem `sentInWindow` gezählt wird. */
     windowStartMs: number | null;
+    /** Erlaubte Nebenläufigkeit, beim ersten Belegen festgelegt. */
+    capacity: number | null;
 };
 
+/**
+ * Legt den Anfangszustand eines Zugangsdatensatzes an.
+ *
+ * @returns Zustand ohne Budgetwissen, ohne Warter, ohne festgelegte Kapazität
+ */
 function createState(): CredentialState {
     return {
         limit: null,
@@ -92,6 +99,7 @@ function createState(): CredentialState {
         waiters: [],
         sentInWindow: 0,
         windowStartMs: null,
+        capacity: null,
     };
 }
 
@@ -248,23 +256,51 @@ export function getRateLimitWaitMs(kind: CredentialKind, nowMs: number = Date.no
  * Belegt einen Platz im Nebenläufigkeitsdeckel und gibt die Freigabefunktion
  * zurück.
  *
+ * **Platzübergabe, nicht Freigabe.** Wer wartet, bekommt den Platz des
+ * Freigebenden direkt übertragen: `release` zählt nur dann herunter, wenn
+ * niemand wartet. Die erste Fassung zählte zuerst herunter und weckte dann —
+ * und zwischen Herunterzählen und dem Hochzählen des Geweckten (ein späterer
+ * Microtask) war `active` zu niedrig. Ein `acquireSlot`, das in dieses Fenster
+ * fiel, nahm den Platz ebenfalls, und der Deckel war um eins überschritten.
+ * Dass das mit den heutigen Aufrufern nicht passiert, lag an deren
+ * Makrotask-Abstand — also an einer Eigenschaft der Aufrufer, nicht an einer
+ * des Semaphors. Genau das ist die falsche Stelle für eine Invariante.
+ *
  * Die Freigabe ist idempotent: zweimal aufgerufen gibt sie nur einen Platz
  * frei. Ohne das würde ein doppeltes `finally` den Deckel aufweichen.
  *
+ * `capacity` liegt im Zustand, nicht nur im Parameter: zwei Aufrufer mit
+ * verschiedenen Werten für dieselbe Rolle würden die Invariante sonst sofort
+ * brechen. Der zuerst gesetzte Wert gilt, eine Abweichung wird gemeldet.
+ *
  * @param kind - betroffener Zugangsdatensatz
  * @param capacity - erlaubte Zahl gleichzeitiger Anfragen
- * @returns Funktion, die den Platz freigibt
+ * @returns Funktion, die den Platz freigibt oder weitergibt
  */
 export async function acquireSlot(kind: CredentialKind, capacity: number): Promise<() => void> {
     const state = states[kind];
 
-    if (state.active >= capacity) {
+    if (state.capacity === null) {
+        state.capacity = capacity;
+    } else if (state.capacity !== capacity) {
+        logger.warn(
+            { credentials: kind, established: state.capacity, requested: capacity },
+            'nft_data_platform_concurrency_mismatch'
+        );
+    }
+
+    const limit = state.capacity;
+
+    if (state.active >= limit) {
+        // Kein Hochzählen nach dem Warten: der Platz wird uns von `release`
+        // übergeben, der Zähler bleibt dabei unverändert.
         await new Promise<void>((resolve) => {
             state.waiters.push(resolve);
         });
+    } else {
+        state.active += 1;
     }
 
-    state.active += 1;
     let released = false;
 
     return function release(): void {
@@ -273,12 +309,15 @@ export async function acquireSlot(kind: CredentialKind, capacity: number): Promi
         }
 
         released = true;
-        state.active -= 1;
 
         const next = state.waiters.shift();
         if (next !== undefined) {
+            // Platz weitergeben: `active` bleibt, der Geweckte erbt ihn.
             next();
+            return;
         }
+
+        state.active -= 1;
     };
 }
 
@@ -308,9 +347,23 @@ export function getRateLimitSnapshot(kind: CredentialKind): RateLimitSnapshot {
  * Gedacht für Tests. Im laufenden Betrieb gibt es keinen Grund, ein Budget zu
  * vergessen.
  *
+ * Weckt vorher alle Warter. Würden die Zustandsobjekte nur ersetzt, hielten
+ * laufende `acquireSlot`-Warter per Closure das **alte** Objekt und würden nie
+ * geweckt — ein Testfall, der einen Warter hinterlässt, ließe den nächsten
+ * hängen statt rot werden. Das ist die unangenehmste Fehlerform in einer Suite.
+ *
  * @returns nichts
  */
 export function resetRateLimitState(): void {
-    states.read = createState();
-    states.ops = createState();
+    for (const kind of ['read', 'ops'] as const) {
+        const state = states[kind];
+
+        let waiter = state.waiters.shift();
+        while (waiter !== undefined) {
+            waiter();
+            waiter = state.waiters.shift();
+        }
+
+        states[kind] = createState();
+    }
 }
