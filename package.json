@@ -25,6 +25,7 @@
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
     "bench:api": "tsx scripts/dev/benchmark-api.ts",
+    "platform:smoke": "tsx scripts/dev/platform-smoke.ts",
     "env:check": "node scripts/check-env.js",
     "env:check:prod": "node scripts/check-env.js production",
     "env:generate-secret": "node scripts/check-env.js --generate-secret",
