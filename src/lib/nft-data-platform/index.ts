@@ -46,3 +46,15 @@ export {
 
 export { getRateLimitSnapshot } from '@/lib/nft-data-platform/rate-limit';
 export type { RateLimitSnapshot } from '@/lib/nft-data-platform/rate-limit';
+
+export {
+    buildTokenNotIndexedPayload,
+    PLATFORM_RESPONSE_CODES,
+    translatePlatformError,
+} from '@/lib/nft-data-platform/view-state';
+export type {
+    PlatformFailureResponse,
+    PlatformResponseCode,
+    TokenNotIndexedPayload,
+    ViewDataState,
+} from '@/lib/nft-data-platform/view-state';
