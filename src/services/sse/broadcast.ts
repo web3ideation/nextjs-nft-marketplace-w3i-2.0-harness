@@ -15,7 +15,37 @@ const connections = new Set<ReadableStreamDefaultController>();
 let lastBroadcast = 0;
 const MIN_BROADCAST_INTERVAL = 100; // ms - prevents spam
 
-const SSE_CHANNEL = process.env.REDIS_SSE_CHANNEL || 'marketplace:sse:events';
+/**
+ * Liefert den Redis-Kanal für SSE-Ereignisse (V64).
+ *
+ * Bewusst **ohne** Rückfallwert und bewusst als Funktion: teilen zwei
+ * Umgebungen eine Redis-Instanz, würde ein gemeinsamer Standardkanal die
+ * Ereignisse der einen Umgebung still in die andere tragen — ein Fehler, der
+ * sich nicht als Fehler zeigt, sondern als unerklärliche Aktualisierung.
+ *
+ * Die Prüfung läuft beim ersten Gebrauch, nicht auf Modulebene: vier Routen
+ * importieren diese Datei (`api/events/marketplace`, `api/events/subscribe`,
+ * `api/health`, `api/admin/system/health`), und ein `throw` beim Import würde
+ * sie alle sprengen — dieselbe Falle wie in
+ * `state/tasks/fix-mongodb-lazy-init.md`.
+ *
+ * @returns der konfigurierte Kanalname
+ * @throws Error wenn REDIS_SSE_CHANNEL fehlt oder leer ist
+ */
+function getSseChannel(): string {
+    const channel = process.env.REDIS_SSE_CHANNEL?.trim();
+
+    if (!channel) {
+        throw new Error(
+            'REDIS_SSE_CHANNEL fehlt. Der SSE-Kanal muss je Umgebung explizit gesetzt sein (V64) — ' +
+                'ein gemeinsamer Standardwert würde Ereignisse zwischen Umgebungen vermischen, ' +
+                'die dieselbe Redis-Instanz nutzen.'
+        );
+    }
+
+    return channel;
+}
+
 const INSTANCE_ID = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
 
 interface SSEEnvelope {
@@ -30,7 +60,8 @@ let subscriberInitPromise: Promise<void> | null = null;
 
 export interface SSEHealthStatus {
     instanceId: string;
-    channel: string;
+    /** null, wenn REDIS_SSE_CHANNEL nicht gesetzt ist — siehe getSSEHealthStatus. */
+    channel: string | null;
     activeConnections: number;
     redisSubscriberInitialized: boolean;
     redisSubscriberStatus: string;
@@ -82,6 +113,9 @@ async function ensureRedisSubscriber(): Promise<void> {
             return;
         }
 
+        // Einmal lesen, mehrfach verwenden: der Abgleich im Handler und das
+        // Abonnement muessen zwingend denselben Kanal sehen.
+        const channelName = getSseChannel();
         const duplicate = publisherClient.duplicate();
 
         duplicate.on('error', (error) => {
@@ -90,7 +124,7 @@ async function ensureRedisSubscriber(): Promise<void> {
         });
 
         duplicate.on('message', (channel, payload) => {
-            if (channel !== SSE_CHANNEL) {
+            if (channel !== channelName) {
                 return;
             }
 
@@ -111,10 +145,10 @@ async function ensureRedisSubscriber(): Promise<void> {
             // ioredis may already be connected depending on state
         }
 
-        await duplicate.subscribe(SSE_CHANNEL);
+        await duplicate.subscribe(channelName);
         subscriberClient = duplicate;
         subscriberInitialized = true;
-        devLog.info(`[SSE] Redis subscriber active on channel: ${SSE_CHANNEL}`);
+        devLog.info(`[SSE] Redis subscriber active on channel: ${channelName}`);
     })();
 
     try {
@@ -150,9 +184,18 @@ export function getConnectionCount(): number {
 }
 
 export function getSSEHealthStatus(): SSEHealthStatus {
+    // Ein Health-Endpunkt, der an einer fehlenden Variablen abstuerzt, verbirgt
+    // genau die Information, fuer die er da ist. Deshalb hier null statt Wurf.
+    let channel: string | null = null;
+    try {
+        channel = getSseChannel();
+    } catch {
+        channel = null;
+    }
+
     return {
         instanceId: INSTANCE_ID,
-        channel: SSE_CHANNEL,
+        channel,
         activeConnections: connections.size,
         redisSubscriberInitialized: subscriberInitialized,
         redisSubscriberStatus: subscriberClient?.status || 'not-initialized',
@@ -178,7 +221,7 @@ export async function broadcastMarketplaceEvent(event: any): Promise<void> {
     };
 
     try {
-        await redis.publish(SSE_CHANNEL, JSON.stringify(envelope));
+        await redis.publish(getSseChannel(), JSON.stringify(envelope));
     } catch (error) {
         devLog.warn('[SSE] Redis publish failed, continuing with local broadcast only:', error instanceof Error ? error.message : error);
     }

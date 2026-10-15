@@ -53,6 +53,7 @@ import {
     getRateLimitWaitMs,
     markWindowExhausted,
     recordRateLimitHeaders,
+    recordRequestSent,
 } from '@/lib/nft-data-platform/rate-limit';
 import { buildAuthHeaders } from '@/lib/nft-data-platform/signing';
 
@@ -357,6 +358,11 @@ export async function requestPlatform(
         timestamp = nextTimestampSeconds(now(), timestamp);
         const startedAt = now();
 
+        // Vor dem Senden zählen, nicht nach dem Erfolg: die Plattform zählt
+        // ebenfalls Versuche, und ein gescheiterter Versuch hat das Fenster
+        // genauso belastet wie ein gelungener.
+        recordRequestSent(options.credentials, startedAt);
+
         const outcome = await sendOnce({
             url,
             canonicalPath,
@@ -424,6 +430,22 @@ export async function requestPlatform(
 
         if (response.status === 429) {
             markWindowExhausted(options.credentials, now());
+        }
+
+        // Zweite Hälfte von V16: der Alarm auf Uhrdrift. Eigene Fehlerstufe und
+        // eigener Ereignisname, damit eine Überwachung darauf ansetzen kann —
+        // im Debug-Rauschen wäre es kein Alarm. Eine Wiederholung hilft hier
+        // nicht (siehe errors.ts), ein gestellter Server-Zeitstempel schon.
+        if (lastError.platformCode === 'stale_timestamp') {
+            logger.error(
+                {
+                    credentials: options.credentials,
+                    sentTimestamp: timestamp,
+                    maxSkewSeconds: 300,
+                    path: canonicalPath,
+                },
+                'nft_data_platform_clock_drift'
+            );
         }
 
         if (!lastError.retryable || attempt === config.maxAttempts) {

@@ -3,6 +3,18 @@
 /**
  * Environment Setup Script
  * Verifies and validates environment configuration
+ *
+ * GELTUNGSGRENZE, die man kennen muss, bevor man sich auf dieses Skript
+ * verlaesst: Es liest eine DATEI (.env.local bzw. .env.production.local), nicht
+ * process.env. In einer Umgebung, in der der Hoster die Variablen in den
+ * Prozess injiziert, existiert diese Datei nicht — dann bricht das Skript ab,
+ * bevor es etwas geprueft hat. Es ist deshalb eine Entwicklerhilfe gegen
+ * vergessene lokale Variablen und NICHT der Nachweis fuer V14.
+ *
+ * Der verbindliche Nachweis ist getPlatformConfig() in
+ * src/lib/nft-data-platform/config.ts: die Funktion laeuft im echten Prozess,
+ * wirft beim ersten Aufruf und nennt alle fehlenden Namen auf einmal.
+ * Entscheidung E4, siehe state/plan-v2-plattform-integration.md Abschnitt 6.
  */
 
 const fs = require('fs');
@@ -43,7 +55,11 @@ const templateFiles = {
 const criticalVars = {
     common: [
         'MONGODB_URI',
-        'JWT_SECRET'
+        'JWT_SECRET',
+        // V64: je Umgebung explizit. Ein gemeinsamer Standardkanal wuerde
+        // SSE-Ereignisse zwischen Umgebungen vermischen, die dieselbe
+        // Redis-Instanz nutzen.
+        'REDIS_SSE_CHANNEL'
     ],
     development: [
         'NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID',
@@ -54,6 +70,38 @@ const criticalVars = {
         'NEXT_PUBLIC_MARKETPLACE_ADDRESS',
         'NEXT_PUBLIC_SUBGRAPH_V2_URL'
     ]
+};
+
+// Variablen, die nur unter einer Bedingung Pflicht sind. Die feste Liste oben
+// kann das nicht ausdruecken — ein Flag, das eine Datenquelle scharf stellt,
+// macht genau die Variablen pflichtig, die diese Quelle braucht, und keine
+// davon, wenn es aus ist.
+const conditionalVars = [
+    {
+        reason: 'NFT_DATA_PLATFORM_ENABLED ist an',
+        isActive: (vars) => vars.NFT_DATA_PLATFORM_ENABLED === 'true' || vars.NFT_DATA_PLATFORM_ENABLED === '1',
+        names: [
+            'NFT_API_BASE_URL',
+            'NFT_API_READ_CLIENT_ID',
+            'NFT_API_READ_KEY',
+            'NFT_API_READ_SECRET',
+            'NFT_API_OPS_CLIENT_ID',
+            'NFT_API_OPS_KEY',
+            'NFT_API_OPS_SECRET'
+        ]
+    }
+];
+
+// Stellwerte mit Standardwert im Code. Werden nur gelistet, nie erzwungen —
+// sie existieren, damit die Messung aus V34 die Startwerte ohne Codeaenderung
+// korrigieren kann.
+const optionalVars = {
+    'NFT_API_TIMEOUT_MS': '10000',
+    'NFT_API_MAX_ATTEMPTS': '3',
+    'NFT_API_READ_LIMIT_PER_MINUTE': '600',
+    'NFT_API_READ_CONCURRENCY': '8',
+    'NFT_API_OPS_LIMIT_PER_MINUTE': '30',
+    'NFT_API_OPS_CONCURRENCY': '2'
 };
 
 function checkFileExists(filePath) {
@@ -173,8 +221,40 @@ function checkEnvironment(env) {
         }
     });
 
+    // Bedingte Pflichtgruppen
+    conditionalVars.forEach(group => {
+        if (!group.isActive(vars)) {
+            log.info(`Skipped: ${group.names.length} variable(s) not required (${group.reason} is false)`);
+            return;
+        }
+
+        log.info(`Validating conditional group: ${group.reason}`);
+
+        group.names.forEach(varName => {
+            if (!vars[varName]) {
+                log.error(`${varName} is not set (required because ${group.reason})`);
+                hasErrors = true;
+            } else {
+                log.success(`${varName} is set`);
+            }
+        });
+    });
+
+    // Optionale Stellwerte: nur anzeigen, welcher Wert gilt.
+    const setOptional = Object.keys(optionalVars).filter(name => vars[name]);
+    if (setOptional.length > 0) {
+        log.info(`${setOptional.length} optional tuning variable(s) overridden: ${setOptional.join(', ')}`);
+    }
+
     // Security warnings for NEXT_PUBLIC_ variables
     const publicVars = Object.keys(vars).filter(k => k.startsWith('NEXT_PUBLIC_'));
+
+    // V14: keine Plattform-Variable darf einen NEXT_PUBLIC_-Spiegel haben.
+    const leakedPlatformVars = publicVars.filter(k => k.includes('NFT_API_'));
+    if (leakedPlatformVars.length > 0) {
+        log.error(`Platform credentials must never be client-side (V14): ${leakedPlatformVars.join(', ')}`);
+        hasErrors = true;
+    }
 
     if (publicVars.length > 0) {
         log.info(`\n${publicVars.length} client-side variables (NEXT_PUBLIC_*) found`);

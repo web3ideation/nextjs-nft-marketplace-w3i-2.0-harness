@@ -23,6 +23,7 @@ import { requestPlatform, type PlatformTransportDeps } from '@/lib/nft-data-plat
 import { resetPlatformConfigCache } from '@/lib/nft-data-platform/config';
 import {
     PlatformAuthError,
+    PlatformConfigError,
     PlatformRateLimitError,
     PlatformResponseError,
     PlatformUnavailableError,
@@ -140,6 +141,9 @@ function harness(outcomes: Array<Response | Error>): Harness {
 }
 
 beforeEach(() => {
+    // Ohne das Flag wirft getPlatformConfig() seit Paket A2 — und zwar
+    // absichtlich: ein ausgeschaltetes Flag IST ein Konfigurationszustand.
+    process.env.NFT_DATA_PLATFORM_ENABLED = 'true';
     process.env.NFT_API_BASE_URL = 'https://platform.example.test';
     process.env.NFT_API_READ_CLIENT_ID = 'alpha-read';
     process.env.NFT_API_READ_KEY = 'read-key-123456';
@@ -444,6 +448,61 @@ describe('requestPlatform — Rate-Limit-Budget (V34)', () => {
         await requestPlatform({ method: 'GET', path: '/api/v1/x', credentials: 'read' }, deps);
 
         expect(getRateLimitSnapshot('read').limit).toBeNull();
+    });
+});
+
+describe('requestPlatform — eigene Fensterzählung (Advisor-Befund 7)', () => {
+    it('zählt jeden Versuch, nicht jeden Erfolg — die Plattform zählt auch Versuche', async () => {
+        const { deps } = harness([failure(503, 'x'), failure(503, 'x'), success({ ok: true })]);
+
+        const result = await requestPlatform({ method: 'GET', path: '/api/v1/x', credentials: 'read' }, deps);
+
+        expect(result.attempts).toBe(3);
+        expect(getRateLimitSnapshot('read').sentInWindow).toBe(3);
+    });
+
+    it('zählt read und ops getrennt', async () => {
+        const { deps } = harness([success({ ok: true }), success({ ok: true })]);
+
+        await requestPlatform({ method: 'GET', path: '/api/v1/x', credentials: 'read' }, deps);
+        await requestPlatform({ method: 'POST', path: '/api/v1/y', credentials: 'ops', body: {} }, deps);
+
+        expect(getRateLimitSnapshot('read').sentInWindow).toBe(1);
+        expect(getRateLimitSnapshot('ops').sentInWindow).toBe(1);
+    });
+
+    it('beginnt an der Fenstergrenze neu, statt endlos weiterzuzählen', async () => {
+        let clock = FROZEN_NOW_MS;
+        const deps: PlatformTransportDeps = {
+            fetchImpl: async () => success({ ok: true }),
+            sleepImpl: async () => undefined,
+            nowMs: () => clock,
+            randomUnit: () => 0.5,
+        };
+
+        await requestPlatform({ method: 'GET', path: '/api/v1/a', credentials: 'read' }, deps);
+        await requestPlatform({ method: 'GET', path: '/api/v1/b', credentials: 'read' }, deps);
+        expect(getRateLimitSnapshot('read').sentInWindow).toBe(2);
+
+        // Eine Minute weiter: neues Zählfenster der Plattform.
+        clock = FROZEN_NOW_MS + 60_000;
+        await requestPlatform({ method: 'GET', path: '/api/v1/c', credentials: 'read' }, deps);
+
+        expect(getRateLimitSnapshot('read').sentInWindow).toBe(1);
+    });
+});
+
+describe('requestPlatform — Flag aus', () => {
+    it('kommt nicht einmal zum Senden, wenn das Flag aus ist', async () => {
+        delete process.env.NFT_DATA_PLATFORM_ENABLED;
+        resetPlatformConfigCache();
+
+        const { calls, deps } = harness([success({ ok: true })]);
+
+        await expect(
+            requestPlatform({ method: 'GET', path: '/api/v1/x', credentials: 'read' }, deps)
+        ).rejects.toBeInstanceOf(PlatformConfigError);
+        expect(calls).toHaveLength(0);
     });
 });
 

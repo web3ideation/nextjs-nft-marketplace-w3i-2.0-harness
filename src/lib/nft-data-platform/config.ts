@@ -139,18 +139,47 @@ function readCredentials(kind: CredentialKind, missing: string[]): PlatformCrede
     };
 }
 
+/**
+ * Sagt, ob die Plattform-Nutzung eingeschaltet ist.
+ *
+ * Bewusst streng: nur `'true'` und `'1'` gelten als an. `'TRUE'`, `'yes'`,
+ * `'on'`, ein Leerstring oder eine fehlende Variable gelten als aus. Ein Flag,
+ * das bei einem Tippfehler „an" bedeutet, ist schlimmer als keins — es schaltet
+ * dann eine Datenquelle scharf, die niemand scharf stellen wollte.
+ *
+ * Kein `NEXT_PUBLIC_`-Gegenstück (V14): das Flag entscheidet über
+ * serverseitige Aufrufe und hat im Browser nichts zu suchen.
+ *
+ * @returns true, wenn NFT_DATA_PLATFORM_ENABLED genau 'true' oder '1' ist
+ */
+export function isPlatformEnabled(): boolean {
+    const raw = process.env.NFT_DATA_PLATFORM_ENABLED;
+    return raw === 'true' || raw === '1';
+}
+
 let cached: PlatformConfig | null = null;
 
 /**
  * Liefert die Plattform-Konfiguration und legt sie beim ersten Aufruf an.
  *
  * @returns die geprüfte Konfiguration
- * @throws PlatformConfigError wenn eine Pflichtvariable fehlt oder die
- *   Basis-URL keine absolute http(s)-URL ist. Die Meldung nennt die Namen.
+ * @throws PlatformConfigError wenn das Flag aus ist, eine Pflichtvariable
+ *   fehlt, oder die Basis-URL keine absolute http(s)-URL ist. Bei fehlenden
+ *   Variablen nennt die Meldung alle Namen auf einmal.
  */
 export function getPlatformConfig(): PlatformConfig {
     if (cached !== null) {
         return cached;
+    }
+
+    // Das ausgeschaltete Flag IST ein Konfigurationszustand, keine eigene
+    // Fehlerart. Dadurch gibt isPlatformConfigured() unten automatisch `false`
+    // zurück — genau das, was ein Aufrufer mit degradiertem Pfad braucht (V32).
+    if (!isPlatformEnabled()) {
+        throw new PlatformConfigError(
+            'NFT Data Platform ist nicht eingeschaltet (NFT_DATA_PLATFORM_ENABLED ist nicht "true" oder "1").',
+            []
+        );
     }
 
     const missing: string[] = [];
@@ -206,10 +235,12 @@ export function resetPlatformConfigCache(): void {
 }
 
 /**
- * Sagt, ob die Konfiguration vollständig ist, ohne zu werfen.
+ * Sagt, ob die Plattform benutzbar ist, ohne zu werfen.
  *
  * Gedacht für Aufrufer, die einen degradierten Pfad haben und deshalb keinen
- * Fehler brauchen, sondern eine Entscheidung (V32).
+ * Fehler brauchen, sondern eine Entscheidung (V32). Liefert auch `false`, wenn
+ * das Flag aus ist — für den Aufrufer ist „abgeschaltet" und „nicht
+ * konfiguriert" dieselbe Lage: er muss die lokale Quelle nehmen.
  *
  * @returns true, wenn getPlatformConfig() ohne Fehler durchläuft
  */

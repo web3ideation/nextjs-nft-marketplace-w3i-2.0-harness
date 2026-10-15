@@ -31,7 +31,17 @@
  * - Der Zustand liegt im Prozess. Läuft die App in mehreren Instanzen, zählt
  *   jede für sich; das echte Limit gilt aber je Client über alle Instanzen.
  *   Das ist bewusst offen gelassen: die Messung aus V34 soll erst zeigen, ob es
- *   ein Problem ist, bevor ein gemeinsamer Zähler dazukommt.
+ *   ein Problem ist, bevor ein gemeinsamer Zähler dazukommt. Web und Worker
+ *   sind dabei schon heute zwei Prozesse mit demselben `read`-Datensatz, es ist
+ *   also kein Sonderfall — geführt in `state/assumption-ledger.md` (13.10.2026).
+ * - Deshalb zählt dieses Modul zusätzlich die EIGENEN gesendeten Anfragen im
+ *   laufenden Fenster (`sentInWindow`). Das ist die Gegenprobe zu `remaining`:
+ *   `remaining` ist die globale Wahrheit über alle Instanzen, `sentInWindow` der
+ *   eigene Anteil. Fällt `remaining` schneller als `sentInWindow` steigt, ist
+ *   ein anderer Prozess laut — ohne die Gegenzahl sind die beiden Fälle nicht
+ *   zu unterscheiden, und V34 wäre nach dem Umschalten nicht auswertbar.
+ *   Gezählt werden **Versuche**, nicht Erfolge, weil die Plattform ebenfalls
+ *   Versuche zählt.
  */
 
 import { logger } from '@/lib/logger';
@@ -56,6 +66,8 @@ export type RateLimitSnapshot = {
     active: number;
     /** Wie viele auf einen Platz warten. */
     queued: number;
+    /** Eigene gesendete Versuche im laufenden 60-Sekunden-Fenster. */
+    sentInWindow: number;
 };
 
 type CredentialState = {
@@ -65,10 +77,22 @@ type CredentialState = {
     blockedUntilMs: number | null;
     active: number;
     waiters: Array<() => void>;
+    sentInWindow: number;
+    /** Beginn des Fensters, in dem `sentInWindow` gezählt wird. */
+    windowStartMs: number | null;
 };
 
 function createState(): CredentialState {
-    return { limit: null, remaining: null, observedAtMs: null, blockedUntilMs: null, active: 0, waiters: [] };
+    return {
+        limit: null,
+        remaining: null,
+        observedAtMs: null,
+        blockedUntilMs: null,
+        active: 0,
+        waiters: [],
+        sentInWindow: 0,
+        windowStartMs: null,
+    };
 }
 
 const states: Record<CredentialKind, CredentialState> = {
@@ -89,6 +113,32 @@ function parseHeaderInt(raw: string | null): number | null {
 
     const value = Number(raw);
     return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Zählt einen eigenen Sendeversuch im laufenden Fenster.
+ *
+ * Das Fenster läuft in denselben festen 60-Sekunden-Schritten wie das der
+ * Plattform (abgeleitet aus der Systemuhr, V16), damit die eigene Zahl und das
+ * gemeldete `remaining` sich auf dasselbe Fenster beziehen. Beim Wechsel der
+ * Fenstergrenze beginnt die Zählung bei eins, nicht bei null — der Versuch, der
+ * den Wechsel auslöst, gehört ins neue Fenster.
+ *
+ * @param kind - betroffener Zugangsdatensatz
+ * @param nowMs - aktuelle Zeit; einspeisbar für Tests
+ * @returns die Zahl der Versuche im laufenden Fenster, diesen eingeschlossen
+ */
+export function recordRequestSent(kind: CredentialKind, nowMs: number = Date.now()): number {
+    const state = states[kind];
+    const windowStart = Math.floor(nowMs / WINDOW_MS) * WINDOW_MS;
+
+    if (state.windowStartMs !== windowStart) {
+        state.windowStartMs = windowStart;
+        state.sentInWindow = 0;
+    }
+
+    state.sentInWindow += 1;
+    return state.sentInWindow;
 }
 
 /**
@@ -123,7 +173,13 @@ export function recordRateLimitHeaders(kind: CredentialKind, headers: Headers, n
         const usedShare = state.limit === 0 ? 0 : used / state.limit;
 
         logger.debug(
-            { credentials: kind, limit: state.limit, remaining: state.remaining, usedShare },
+            {
+                credentials: kind,
+                limit: state.limit,
+                remaining: state.remaining,
+                usedShare,
+                sentInWindow: state.sentInWindow,
+            },
             'nft_data_platform_rate_limit'
         );
 
@@ -131,7 +187,13 @@ export function recordRateLimitHeaders(kind: CredentialKind, headers: Headers, n
         // der Startwert 600 zu niedrig oder ein Aufrufer fragt zu oft.
         if (usedShare >= 0.8) {
             logger.warn(
-                { credentials: kind, limit: state.limit, remaining: state.remaining, usedShare },
+                {
+                    credentials: kind,
+                    limit: state.limit,
+                    remaining: state.remaining,
+                    usedShare,
+                    sentInWindow: state.sentInWindow,
+                },
                 'nft_data_platform_rate_limit_high'
             );
         }
@@ -236,6 +298,7 @@ export function getRateLimitSnapshot(kind: CredentialKind): RateLimitSnapshot {
         blockedUntilMs: state.blockedUntilMs,
         active: state.active,
         queued: state.waiters.length,
+        sentInWindow: state.sentInWindow,
     };
 }
 

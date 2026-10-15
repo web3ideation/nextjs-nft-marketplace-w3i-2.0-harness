@@ -23,7 +23,12 @@ export type {
     PlatformTransportDeps,
 } from '@/lib/nft-data-platform/client';
 
-export { getPlatformConfig, isPlatformConfigured, resetPlatformConfigCache } from '@/lib/nft-data-platform/config';
+export {
+    getPlatformConfig,
+    isPlatformConfigured,
+    isPlatformEnabled,
+    resetPlatformConfigCache,
+} from '@/lib/nft-data-platform/config';
 export type { CredentialKind, PlatformConfig, PlatformCredentials } from '@/lib/nft-data-platform/config';
 
 export {
