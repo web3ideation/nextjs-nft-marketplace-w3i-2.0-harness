@@ -9,6 +9,20 @@ Plattform-Seite 03.09.2026), `ARCHITECTURE.md`, `docs/STATUS.md`,
 Evidenz-Marker: `[Fakt]` belegt · `[Schlussfolgerung]` abgeleitet · `[Annahme]` ungeprüft ·
 `[offene Frage]` ungeklärt.
 
+> **Provenienz dieser Datei, Vermerk vom 13.10.2026.** `[Fakt]` Diese Datei wurde am 25.09.2026
+> **in sich** überarbeitet, bevor irgendein Advisor-Pass gelaufen war: Abschnitt 9 (E1–E3) kam
+> hinzu, die Auflage 3 wurde umgeschrieben, in Abschnitt 3 kamen der A0-Nachtrag und die offene
+> Frage zum Prüfstand-Commit dazu, in A1 und A3 wurde der Testpfad korrigiert, in A2 die
+> V64-Empfehlung angenommen, A-4 entschieden. `[Fakt]` Die Fassung vor dieser Überarbeitung liegt
+> in keiner Git-Historie — die Datei war bis Commit `8b91020` nicht getrackt.
+> `[Schlussfolgerung]` Damit ist für diese eine Überarbeitung nicht belegbar, was sie verändert
+> hat; das verstößt gegen Punkt 9 von `.claude/skills/advisor-pass/SKILL.md` und ist nur noch als
+> Vermerk heilbar, nicht als Beleg. Geführt in `state/assumption-ledger.md`.
+> **Ab hier gilt der Skill wieder buchstäblich:** diese Datei bleibt von jetzt an unverändert, der
+> Pass schreibt `state/advisor-findings-plattform-integration.md`, und das Ergebnis ist
+> `state/plan-v2-plattform-integration.md`. Was dort anders ist als hier, ist die Wirkung des
+> Passes — und diesmal nachprüfbar.
+
 > **Erhebungsgrenze dieses Plans.** `[Fakt]` Er entstand aus der Projektwissens-Suche über das
 > synchronisierte Repo, nicht aus vollständig gelesenen Dateien. Jede Datei-, Zeilen- und
 > Vollständigkeitsangabe unten ist deshalb als Ausgangspunkt zu behandeln, nicht als Inventar.
