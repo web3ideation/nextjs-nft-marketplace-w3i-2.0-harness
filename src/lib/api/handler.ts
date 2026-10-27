@@ -22,6 +22,35 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ApiError, RateLimitError } from './errors';
+
+/**
+ * Bringt das `details`-Feld eines Fehlers in die Form, die
+ * `createErrorResponse` als `metadata` ausliefert.
+ *
+ * Verengung statt Zusicherung: `details` ist `unknown`, und ein Array oder ein
+ * nackter Wert hat in einem Metadaten-Objekt nichts zu suchen — er würde im
+ * Browser als `metadata: [...]` oder `metadata: "text"` ankommen und jeden
+ * Leser überraschen. Was nicht passt, wird weggelassen, nicht umgeformt.
+ *
+ * @param details - das `details`-Feld eines ApiError
+ * @returns ein Objekt für `metadata`, oder undefined
+ */
+function toErrorMetadata(details: unknown): Record<string, unknown> | undefined {
+    return isPlainObject(details) ? details : undefined;
+}
+
+/**
+ * Echter Type Guard für ein einfaches Objekt.
+ *
+ * Als Prädikat formuliert, damit keine Typzusicherung nötig ist: `unknown` wird
+ * durch die Prüfung selbst verengt, nicht durch ein `as`.
+ *
+ * @param value - beliebiger Wert
+ * @returns true, wenn der Wert ein Objekt und kein Array ist
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 import { apiTooManyRequests, createErrorResponse } from './responses';
 import { logger } from '../logger';
 import { rateLimit, RATE_LIMIT_CONFIG, type RateLimitConfig } from '../middleware/rateLimit';
@@ -166,7 +195,18 @@ export function apiHandler<T = any>(
 
             // Handle ApiError instances
             if (error instanceof ApiError) {
-                return createErrorResponse(error.message, error.statusCode, error.code) as any;
+                // `details` wurde bis Paket A7b nicht durchgereicht, obwohl
+                // `createErrorResponse` einen vierten Parameter dafür hat. Folge:
+                // jede Route, die Felder an einen Fehler hängt, verlor sie still —
+                // auch `ValidationError`, das seine Validierungsfehler in
+                // `details` legt. Rein additiv: `metadata` erscheint nur, wenn ein
+                // Fehler `details` trägt.
+                return createErrorResponse(
+                    error.message,
+                    error.statusCode,
+                    error.code,
+                    toErrorMetadata(error.details)
+                ) as any;
             }
 
             // Handle unknown errors

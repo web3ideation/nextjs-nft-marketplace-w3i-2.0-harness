@@ -37,18 +37,26 @@
  *   Form eines `nft_metadata`-Dokuments über den lokalen Stand; die
  *   nachgelagerte Logik läuft unverändert. Neu sind ausschließlich zwei
  *   zusätzliche Felder, `dataSource` und `staleWarning`.
- * - **Der 404-Vertrag aus V5** (`TOKEN_NOT_INDEXED`, `refreshQueued`) ist
- *   **nicht** hier, sondern in Paket A7b: er braucht eine Entscheidung über die
- *   geteilte Fehlerplumbing, die `details` heute nicht durchreicht.
+ * - **Der 404-Vertrag aus V5** (Paket A7b): Kennt die Plattform das Token nicht,
+ *   antwortet die Route mit 404 und `code: 'TOKEN_NOT_INDEXED'` samt
+ *   `refreshQueued`, `refreshJobId`, `contractAddress`, `tokenId`, `chainId`.
+ *   Das ist eine **Auskunft, kein Ausfall** — deshalb ausdrücklich kein
+ *   Rückfall auf `nft_metadata`. `refreshQueued` ist dabei bis Paket A3b immer
+ *   `false`: der Vertrag steht, die Auftragsstellung fehlt noch.
+ * - **Hier sitzt der Whitelist-Filter** (V33), nicht im Lesepfad. Außerhalb der
+ *   Diamond-Whitelist darf kein Refresh entstehen, sonst zieht ein
+ *   Seitenaufruf eine fremde Collection ins Indexing. Ein lesender Abruf
+ *   registriert nichts und braucht den Filter deshalb nicht.
  */
 
 import { NextRequest } from 'next/server';
-import { apiHandler, apiSuccess, getQueryParam, BadRequestError } from '@/lib/api';
+import { apiHandler, apiSuccess, getQueryParam, BadRequestError, NotFoundError } from '@/lib/api';
 import { getCollection } from '@/lib/mongodb';
 import { isPlatformConfigured } from '@/lib/nft-data-platform/config';
 import { buildTokenDetailOverlay } from '@/lib/nft-data-platform/mappers/token-detail';
 import { getCollectionDetail, getTokenDetail, getTokenOwners } from '@/lib/nft-data-platform/read';
-import { translatePlatformError } from '@/lib/nft-data-platform/view-state';
+import { buildTokenNotIndexedPayload, PLATFORM_RESPONSE_CODES, translatePlatformError } from '@/lib/nft-data-platform/view-state';
+import { isCollectionWhitelisted } from '@/services/blockchain/collection-whitelist';
 import type { TokenDetailOverlay } from '@/lib/nft-data-platform/mappers/token-detail';
 import { getChainConfig } from '@/services/blockchain/rpc-config';
 import { blockchainStateSync } from '@/services/nft-sync/blockchain-state-sync';
@@ -147,6 +155,34 @@ export const GET = apiHandler(async (request: NextRequest) => {
                 },
                 'nft_detail_platform_read_failed'
             );
+
+            // V5: Die Plattform kennt das Token nicht. Das ist eine Auskunft,
+            // kein Ausfall — also kein Rückfall auf nft_metadata, sondern ein
+            // 404 mit den sechs Feldern, aus denen die Oberfläche „wird noch
+            // erfasst" machen kann.
+            if (failure.code === PLATFORM_RESPONSE_CODES.notIndexed) {
+                // V33: Außerhalb der Diamond-Whitelist darf kein Refresh
+                // entstehen, sonst zieht ein Seitenaufruf eine fremde
+                // Collection ins Indexing. Der Filter aus A4a ist genau hier
+                // nötig — nicht im Lesepfad, der nichts registriert.
+                const isWhitelisted = await isCollectionWhitelisted(normalizedAddress);
+
+                throw new NotFoundError(
+                    'Dieses NFT ist noch nicht erfasst.',
+                    buildTokenNotIndexedPayload({
+                        contractAddress: normalizedAddress,
+                        tokenId,
+                        chainId,
+                        isWhitelisted,
+                        // Kein Auftrag: queueTokenRefresh gehört zu A3b, die
+                        // Kopplung an Ereignisse zu A4b. Bis dahin ist
+                        // refreshQueued immer false — der Vertrag steht, die
+                        // Auftragsstellung fehlt noch.
+                        refreshJobId: null,
+                    }),
+                    PLATFORM_RESPONSE_CODES.notIndexed
+                );
+            }
 
             if (!failure.allowLocalFallback) {
                 // Kein Rückfall: wir wissen nicht, was wir bekommen haben. Eine

@@ -31,6 +31,7 @@ const ensureMetadata = vi.fn();
 const getTokenDetail = vi.fn();
 const getTokenOwners = vi.fn();
 const getCollectionDetail = vi.fn();
+const isCollectionWhitelisted = vi.fn();
 
 vi.mock('@/lib/mongodb', () => ({
     getCollection: vi.fn(async (name: string) => ({
@@ -45,6 +46,10 @@ vi.mock('@/services/nft-sync/blockchain-state-sync', () => ({
 
 vi.mock('@/services/nft-sync/ipfs-metadata-lazy-sync', () => ({
     ipfsMetadataLazySync: { ensureMetadata: (...args: unknown[]) => ensureMetadata(...args) },
+}));
+
+vi.mock('@/services/blockchain/collection-whitelist', () => ({
+    isCollectionWhitelisted: (...args: unknown[]) => isCollectionWhitelisted(...args),
 }));
 
 vi.mock('@/lib/nft-data-platform/read', () => ({
@@ -180,6 +185,7 @@ beforeEach(() => {
     getTokenDetail.mockResolvedValue(platformToken);
     getTokenOwners.mockResolvedValue(platformOwners);
     getCollectionDetail.mockResolvedValue(platformCollection);
+    isCollectionWhitelisted.mockResolvedValue(true);
 
     delete process.env.NFT_DATA_PLATFORM_ENABLED;
     process.env.NFT_API_BASE_URL = 'https://platform.example.test';
@@ -324,6 +330,64 @@ describe('Flag an, Plattform fällt aus', () => {
         expect(body.staleWarning).toBe(true);
         expect(body).toHaveProperty('stats');
         expect(body).toHaveProperty('blockchain');
+    });
+
+    it('antwortet bei einem Plattform-404 mit dem V5-Vertrag, nicht mit einem Rückfall', async () => {
+        const { PlatformResponseError } = await import('@/lib/nft-data-platform/errors');
+        getTokenDetail.mockRejectedValue(new PlatformResponseError('unbekannt', 404, null));
+        isCollectionWhitelisted.mockResolvedValue(true);
+
+        const response = await GET(detailRequest());
+        const envelope = (await response.json()) as Record<string, unknown>;
+        const metadata = envelope.metadata as Record<string, unknown>;
+
+        expect(response.status).toBe(404);
+        expect(envelope.code).toBe('TOKEN_NOT_INDEXED');
+        expect(Object.keys(metadata).sort()).toEqual(
+            ['code', 'refreshQueued', 'refreshJobId', 'contractAddress', 'tokenId', 'chainId'].sort()
+        );
+        expect(metadata.contractAddress).toBe('0xabc');
+        expect(metadata.tokenId).toBe('7');
+        expect(metadata.chainId).toBe(11155111);
+    });
+
+    it('liefert bei einem 404 NICHT den lokalen Stand — "nicht indiziert" ist eine Auskunft, kein Ausfall', async () => {
+        const { PlatformResponseError } = await import('@/lib/nft-data-platform/errors');
+        getTokenDetail.mockRejectedValue(new PlatformResponseError('unbekannt', 404, null));
+        isCollectionWhitelisted.mockResolvedValue(true);
+
+        const response = await GET(detailRequest());
+        const text = await response.text();
+
+        expect(text).not.toContain('Lokaler Name');
+    });
+
+    it('setzt refreshQueued außerhalb der Whitelist auf false (V33)', async () => {
+        const { PlatformResponseError } = await import('@/lib/nft-data-platform/errors');
+        getTokenDetail.mockRejectedValue(new PlatformResponseError('unbekannt', 404, null));
+        isCollectionWhitelisted.mockResolvedValue(false);
+
+        const response = await GET(detailRequest());
+        const envelope = (await response.json()) as Record<string, unknown>;
+        const metadata = envelope.metadata as Record<string, unknown>;
+
+        expect(metadata.refreshQueued).toBe(false);
+        expect(metadata.refreshJobId).toBeNull();
+        expect(isCollectionWhitelisted).toHaveBeenCalledWith('0xabc');
+    });
+
+    it('setzt refreshQueued auch auf der Whitelist noch auf false — der Auftrag kommt erst mit A3b', async () => {
+        const { PlatformResponseError } = await import('@/lib/nft-data-platform/errors');
+        getTokenDetail.mockRejectedValue(new PlatformResponseError('unbekannt', 404, null));
+        isCollectionWhitelisted.mockResolvedValue(true);
+
+        const response = await GET(detailRequest());
+        const envelope = (await response.json()) as Record<string, unknown>;
+        const metadata = envelope.metadata as Record<string, unknown>;
+
+        // V5 ist damit zur Haelfte erfuellt: der Vertrag steht, die
+        // Auftragsstellung fehlt. Geführt im Assumption Ledger.
+        expect(metadata.refreshQueued).toBe(false);
     });
 
     it('fällt bei einer unverständlichen Antwort NICHT zurück', async () => {
