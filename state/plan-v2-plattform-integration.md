@@ -525,20 +525,43 @@ einen Literaltyp, womit `if (FEATURES.X)` für TypeScript toter Code ist.
 bedingt; `isPlatformConfigured()` existiert dort schon für genau diesen Zweck. Die Pflichtprüfung
 liegt an derselben Stelle, und `check-env.js` bleibt Entwicklerhilfe (Befund 14: es liest Dateien,
 nicht die Prozessumgebung, und scheitert in der Zielumgebung vor der ersten Prüfung).
-### E5 — Prüfstand-Commit (V37) · `entschieden 13.10.2026`
-**Entscheidung: `5dda8c7`, der lokale Stand.** Damit ist der gebaute A1 gegen den gültigen
-Prüfstand erhoben, und die vier Annahmen aus Abschnitt 3 brauchen keine Nachlese. Die
-Ledger-Zeile vom 13.10.2026 zur zu engen Prüfstand-Grenze bleibt als historischer Stand stehen;
-ihr Vorbehalt ist mit dieser Entscheidung erledigt, nicht widerlegt.
-`[Schlussfolgerung]` Spec v4 pinnt weiter `7915b52`. Diese Abweichung ist in der Spec
-nachzutragen, sonst zeigen Spec und Plan auf verschiedene Stände — eigener, kleiner Schritt.
-**Frage:** `7915b52` (Spec v4) oder `5dda8c7` (lokaler Workspace)?
-`[Fakt]` Der gebaute A1 ist gegen `5dda8c7` erhoben, und zwar in vier Punkten über die Signierung
-hinaus (Abschnitt 3). `[offene Unsicherheit]` Welcher Stand der jüngere ist, ist hier nicht belegt.
-`[Fakt]` Die Commit-Botschaft des lokalen Stands lautet „docs: document the indexing gate and the
-collection off switch". `[Fakt]` Genau dieses Thema trägt Entscheidung 28 und V63 der Spec.
-`[Schlussfolgerung]` Eine Festlegung auf `7915b52` könnte hinter die Dokumentation zurückfallen, auf
-der zwei Spec-Entscheidungen beruhen. Die Richtung ist deshalb nicht beliebig.
+### E5 — Prüfstand-Commit (V37) · `korrigiert 27.10.2026`
+
+**Gültige Entscheidung: die Plattform-`main`, derzeit `5df7493`.**
+
+**Die Entscheidung vom 13.10.2026 war auf einer falschen Prämisse gebaut** und wird hier nicht
+überschrieben, sondern berichtigt. Damals fiel sie auf `5dda8c7` mit der Begründung, das sei „der
+lokale Stand". `[Fakt]` Das ist falsch: `5dda8c7` ist der Kopf des **unvereinten** Feature-Branches
+`feat/collection-lifecycle-and-worker-heartbeat` und kein Vorfahr von `main`
+(`git merge-base --is-ancestor` verneint). `[Fakt]` Der gemeinsame Vorfahr beider Linien ist
+`7915b52` — genau der Commit, den Spec v4 pinnt. `[Fakt]` Von `7915b52` nach `main` liegen zwei
+Commits: ein CI-Workflow und `scripts/create-api-client.ts`; im **Datenpfad** ist `main` damit
+identisch mit `7915b52`.
+
+`[Schlussfolgerung]` Spec und Plattform-Hauptlinie widersprechen sich also **nicht**. Der in der
+alten Fassung angekündigte Spec-Nachtrag entfällt; es genügt die Notiz, dass der Plan die
+Hauptlinie pinnt und die Spec deren Datenpfad-Äquivalent.
+
+**Die Nachlese der vier A1-Annahmen ist durchgeführt.** Advisor-Befund 1 hatte sie verlangt, die
+alte E5-Fassung erklärte sie für entbehrlich — zu Unrecht. `[Fakt]` `packages/security`,
+`apps/web/src/lib/api-auth.ts` und `apps/web/src/lib/api-response.ts` sind zwischen `7915b52`,
+`5dda8c7` und `main` **unverändert** (leerer `git diff --stat` über diese Pfade).
+`[Schlussfolgerung]` Fehlerform, Codeliste, Header-Platzierung und Replay-Schlüssel tragen
+unabhängig von der Wahl. A1 braucht keine Änderung — belegt, nicht angenommen.
+
+**Zwei Folgen, die mit der Wahl kommen:**
+
+- `[Fakt]` `scripts/create-api-client.ts` liegt auf `main`. Die Spec führt unter V15/P8 „ein
+  Werkzeug zum Anlegen weiterer Clients fehlt der Plattform" — das ist überholt.
+  `[Schlussfolgerung]` A0 kann die Zugangsdaten `alpha-read` und `alpha-ops` womöglich selbst
+  anlegen, statt darauf zu warten.
+- `[offene Annahme]` Der Collection-Status-Guard und die „collection off switch" liegen **nur** auf
+  dem unvereinten Branch; `main` hat weder
+  `apps/web/src/app/api/v1/collections/[chainId]/[contractAddress]/status/route.ts` noch
+  `apps/web/src/lib/collection-status-guard.ts`. Entscheidung 28 und V63 der Spec ruhen aber darauf
+  („Registrierung ist das Tor zum Indexing"). Geführt in `state/assumption-ledger.md`, fällig vor
+  **A4b/A4c** — A3a, A7a, A9 und A11 hängen nicht daran.
+
 ### E6 — `/api/marketplace/items` und die Suche · `entschieden 13.10.2026`
 **Entscheidung: A11 wird gebaut.** Die Übersicht bezieht ihre Metadaten künftig aus der
 Plattform; die R3-Zeile des Abbauplans bleibt damit gültig und bekommt ihren Ersatz. Vor dem
