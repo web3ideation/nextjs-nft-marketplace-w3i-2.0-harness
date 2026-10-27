@@ -48,6 +48,37 @@ export { getRateLimitSnapshot } from '@/lib/nft-data-platform/rate-limit';
 export type { RateLimitSnapshot } from '@/lib/nft-data-platform/rate-limit';
 
 export {
+    getCollectionDetail,
+    getTokenDetail,
+    getTokenOwners,
+    listCollections,
+    searchEntities,
+} from '@/lib/nft-data-platform/read';
+export type { CollectionIdentity, TokenIdentity } from '@/lib/nft-data-platform/read';
+
+export { asPlatformCursor, PLATFORM_DEFAULT_LIMIT, PLATFORM_MAX_LIMIT } from '@/lib/nft-data-platform/cursor';
+export type { PlatformCursor } from '@/lib/nft-data-platform/cursor';
+
+export type {
+    PlatformCollection,
+    PlatformCollectionDetailResponse,
+    PlatformCollectionListResponse,
+    PlatformCollectionPreview,
+    PlatformCollectionRecentToken,
+    PlatformErc1155Balance,
+    PlatformErc721Owner,
+    PlatformMediaAsset,
+    PlatformPage,
+    PlatformPageInfo,
+    PlatformSearchEntity,
+    PlatformSearchResponse,
+    PlatformToken,
+    PlatformTokenCreator,
+    PlatformTokenDetailResponse,
+    PlatformTokenOwnersResponse,
+} from '@/lib/nft-data-platform/types';
+
+export {
     buildTokenNotIndexedPayload,
     PLATFORM_RESPONSE_CODES,
     translatePlatformError,
