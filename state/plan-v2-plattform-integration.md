@@ -352,8 +352,32 @@ soll. v1 behandelte das Altern des Rückfallwegs ausschließlich als Folge des A
 beginnt es, sobald das Flag an ist. **Kleinere Variante:** A6 behält bis zur E1-Entscheidung einen
 schmalen Schreibpfad (Identitäten und Eigentum, ohne Metadaten) — dokumentiert, nicht stillschweigend.
 
-### A7a — Detailseite: Token, Collection, Medien
-**Deckt:** V4, V6, V31, V27, V33 (Prüfkriterium aus A4a) · **Hängt an:** E5, A8, A4a
+### A7a — Detailseite: Token, Collection, Medien · `gebaut`
+**Deckt:** V4, V6, V31, V27, V32 (Quellenwahl) · **Hing an:** E5, A8, A3a
+
+**Korrektur vom 27.10.2026, beim Bau gefunden:** Diese Zeile führte vorher
+„V33 (Prüfkriterium aus A4a)" und A4a als Abhängigkeit. `[Schlussfolgerung]` Das
+war falsch verortet. Ein **lesender** Token-Abruf registriert nichts auf der
+Plattform — nur Discover und Refresh tun das. A7a löst keinen Refresh aus und
+braucht den Whitelist-Filter daher nicht; wer ihn hier einbaut, erzeugt einen
+RPC-Aufruf je Detailseite ohne Gegenwert. Das V33-Kriterium gehört zu **A7b**,
+wo bei einem 404 ein Refresh in Erwägung gezogen wird.
+
+**Zweite Korrektur, dieselbe Ursache:** Die alte Fassung forderte, `nft_metadata`
+im Plattform-Pfad **nicht** zu lesen. `[Fakt]`
+`blockchainStateSync.syncNFTState` schreibt den Chain-Zustand nach
+`nft_metadata`, und die Route liest ihn von dort; die Plattform liefert ihn
+nicht. `[Schlussfolgerung]` Ein Plattform-Pfad ohne `nft_metadata` hätte einen
+leeren `blockchain`-Block gehabt — und damit genau die ERC-1155-Doppelabfrage
+aus Advisor-Befund 8b ausgelöst, die A7a verhindern sollte. Gelesen wird
+`nft_metadata` weiter, aber **nicht mehr als Metadatenquelle**.
+
+**Wie es gebaut ist:** Der Mapper erzeugt eine **Überlagerung** in der Form, die
+die Route schon konsumiert (`metadata`, `contract`, `ownershipBalances`,
+`metadataFetchVersion` — bewusst **ohne** `blockchain`). Damit bleibt der
+Antwortaufbau über 160 Zeilen unverändert und die Form, an der vier Aufrufer
+hängen, garantiert gleich. Neu sind zwei Felder: `dataSource` und
+`staleWarning`.
 **Inhalt:** Token aus der Plattform statt aus `nft_metadata`; Ownership über den
 Ownership-Endpunkt; Collection aus der Collection-Antwort; Medien ausschließlich als CDN-URLs aus
 dem `media`-Block (`cdnUrlOriginal`, `cdnUrlOptimized`, `cdnUrlThumbnail`) — weder Routencode noch
