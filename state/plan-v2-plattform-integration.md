@@ -30,12 +30,20 @@ Dieser Plan heilt alle fünf. Ein zweiter Pass ist nicht vorgesehen. Von den fü
 Entscheidungen sind **E4, E5, E6 und E7 am 13.10.2026 getroffen** (Abschnitt 6); offen bleibt E8,
 das nur A7c blockiert, sowie E1 (fällig vor A6) und E2 (fällig vor Tor T1).
 
-| Paket | Stand |
+| Paket | Stand (15.10.2026) |
 |---|---|
 | A0 Vorbedingungen | teilweise erfüllt; Prüfstand entschieden (E5), Zugangsdaten und Allowlist offen |
-| A1 Transport und Signierung | **gebaut**, `npm run check` Exit 0, 43 Tests. V11 offen (E3) |
-| A2 Konfiguration, Flag, Startprüfung | **schreibbar** — E4 entschieden |
+| A1 Transport und Signierung | **gebaut und committet** (`4bcdd68`). V11 offen (E3) |
+| A2 Konfiguration, Flag, Startprüfung | **gebaut und committet** (`77d072d`) |
+| A8 Zustandsmodell, Fehlerübersetzung | **gebaut und committet** (`2d4bb01`) |
+| Korrekturrunde nach Code-Review | **committet** (`ca8c588`) — vier kritische Befunde an der Nahtstelle von asynchroner Reihenfolge und Fehlerweitergabe |
+| A3a Cursor, DTO-Basis, Token/Collection | **nächstes Paket** |
 | alle übrigen | offen, Zuschnitt in diesem Plan |
+
+`[Fakt]` Der Code der drei gebauten Pakete ist am 15.10.2026 durch `code-reviewer` geprüft worden
+(Urteil: freigegeben mit Hinweisen, vier kritische Befunde mit Vorbedingung). Die vier sind behoben,
+fünf weitere aus der Liste „darf mitlaufen" gleich mit. Offen geblieben sind Befunde 8, 10, 11 und
+14 des Reviews sowie die beiden `.env`-Templates — geführt in `state/assumption-ledger.md`.
 
 ---
 
@@ -87,8 +95,8 @@ Jedes Paket = ein Handoff-Vertrag unter `state/tasks/` = ein Baudurchgang plus h
 Korrekturrunde, mit eigenständig prüfbarem Artefakt. Paket-IDs aus v1 bleiben stabil; geteilte Pakete
 bekommen Buchstaben, neue Pakete die nächste freie Nummer.
 
-### A1 — Transport und Signierung · `gebaut`
-**Deckt:** V10, V11 (nur Mechanik), V15, V16 (nur zur Hälfte, siehe unten), V34
+### A1 — Transport und Signierung · `gebaut und committet`
+**Deckt:** V10, V11 (nur Mechanik), V15, V16 (zweite Hälfte durch A2 nachgeholt), V34
 **Liegt in:** `src/lib/nft-data-platform/`, `scripts/dev/platform-smoke.ts`, Vertrag
 `state/tasks/a1-transport-signierung.md`
 
@@ -96,7 +104,12 @@ bekommen Buchstaben, neue Pakete die nächste freie Nummer.
 „ein Monitoring-Alarm auf Uhrdrift existiert". A1 erkennt `stale_timestamp` und wiederholt es nicht;
 einen Alarm gibt es nicht. `[Schlussfolgerung]` V16 ist zur Hälfte offen. Der fehlende Teil ist klein
 (Auswertung auf `PlatformAuthError` mit `platformCode === 'stale_timestamp'` auf Warnstufe) und wird
-A2 zugeordnet, weil A2 ohnehin die Betriebsvariablen anfasst. Im Ledger geführt.
+A2 zugeordnet, weil A2 ohnehin die Betriebsvariablen anfasst. `[Fakt]` **Erledigt mit A2**
+(`77d072d`): `stale_timestamp` erzeugt `logger.error` mit dem eigenen Ereignisnamen
+`nft_data_platform_clock_drift`. Die Ledger-Zeile vom 13.10.2026 ist damit aufgelöst. `[Fakt]` Der
+Code-Review fand an derselben Stelle eine Fehlalarm-Quelle: lief die Timeout-Uhr schon während der
+Wartezeit im Deckel, konnte der Zeitstempel ablaufen und den Alarm auslösen, obwohl die Uhr stimmt.
+Behoben in `ca8c588`.
 
 **Nachzutragende Lücke, Befund 7.** `[Fakt]` Budget und Nebenläufigkeitsdeckel liegen im Prozess; das
 Fensterlimit gilt je Client über alle Instanzen. `[Fakt]` Web und Worker sind zwei Prozesse mit
@@ -145,18 +158,48 @@ Begründung in E4.
 alle fehlenden Namen nennt (bereits so gebaut, `config.ts`); Flag aus → kein Plattform-Aufruf und
 keine Pflichtvariable; `npm run check` Exit 0; neue Zeile in `state/gates.md` (Artefakt A-3).
 
-### A3 — Normalisierung, DTOs, Cursor
-**Deckt:** V12, V13 · **Hängt an:** E5 (Prüfstand-Commit)
-**Baut:** `src/lib/nft-data-platform/types.ts`, typisierte Endpunkt-Methoden
-**Inhalt:** unverändert gegenüber v1 — `Platform*`-DTOs, Cursor-Paginierung durchgängig, die
-Zeichenkette `page` kommt nicht vor, Filter einwertig außer `chainIds`, Freitextsuche nur über
-`/api/v1/search?q=`. Pflichttest: zweite Seite enthält andere Elemente als die erste.
+### A3 — Normalisierung, DTOs, Cursor · **geteilt in A3a und A3b, 15.10.2026**
+
+**Warum geteilt.** `[Fakt]` A3 umfasste zehn typisierte Endpunkt-Methoden
+(`getTokenDetail`, `getTokenOwners`, `getWalletInventory`, `listCollections`,
+`getCollectionDetail`, `searchEntities`, `discoverTokens`, `discoverWalletHoldings`,
+`queueTokenRefresh`, `queueCollectionRefresh`), ebenso viele zod-Schemata und den Pflichttest
+„zweite Seite ≠ erste Seite". `[Schlussfolgerung]` Das ist kein Baudurchgang plus eine
+Korrekturrunde. Es ist dieselbe Zuschnittfrage, die der Advisor bei A4 und A7 gefunden hat
+(Befunde 2 und 8) — hier vorher gestellt statt hinterher. Zusätzlich sind die DTO-Formen das, worauf
+**alle** späteren Routen aufsetzen: stimmt die Hälfte der Schemata nicht, ist die Korrekturrunde
+eine zweite Bauphase.
+
+**Gemeinsam für beide:** Cursor-Paginierung durchgängig, die Zeichenkette `page` kommt im Client
+nicht vor, Filter einwertig mit Ausnahme `chainIds` am Wallet-Endpunkt, Freitextsuche nur über
+`/api/v1/search?q=`. Prüfstand `5dda8c7` (E5).
+**Testpfad:** `src/lib/nft-data-platform/*.test.ts` — `vitest.config.ts` erfasst nur `src/**`.
 
 **Verschärfung, Befund 20:** v1 prüfte „Routencode kennt keine Rohfeldnamen" per Grep auf zwei
-Namen. Zwei Namen sind eine Stichprobe. Neues Kriterium: **der Grep auf `requestPlatform(`
-außerhalb von `src/lib/nft-data-platform/` ist leer.** Dann kann kein Routencode an Rohformen
-kommen, unabhängig von Feldnamen.
-**Testpfad:** `src/lib/nft-data-platform/*.test.ts` — `vitest.config.ts` erfasst nur `src/**`.
+Namen. Zwei Namen sind eine Stichprobe. Neues Kriterium, gültig ab A3b: **der Grep auf
+`requestPlatform(` außerhalb von `src/lib/nft-data-platform/` ist leer.** Dann kann kein
+Routencode an Rohformen kommen, unabhängig von Feldnamen.
+
+#### A3a — Cursor, DTO-Basis, Token und Collection
+**Deckt:** V12, V13 (Leseteil) · **Hängt an:** E5
+**Baut:** `src/lib/nft-data-platform/types.ts` (Basis plus Token-/Collection-Formen),
+`cursor.ts`, die Methoden `getTokenDetail`, `getTokenOwners`, `listCollections`,
+`getCollectionDetail`, `searchEntities`
+**Warum dieser Schnitt:** genau das, was **A7a** und **A9** brauchen. Die Cursor-Grundlage liegt
+hier, weil jede Liste sie braucht und sie nur einmal stimmen muss.
+**Pflichttest:** zweite Seite enthält andere Elemente als die erste — die Plattform ignoriert
+unbekannte Parameter still und antwortet `200` mit einer ungefilterten ersten Seite, ein Test auf
+„Anfrage erfolgreich" belegt also nichts.
+
+#### A3b — Wallet, Discover, Refresh
+**Deckt:** V12, V13 (Schreib- und Inventarteil) · **Hängt an:** E5, A3a
+**Baut:** `getWalletInventory`, `discoverTokens`, `discoverWalletHoldings`, `queueTokenRefresh`,
+`queueCollectionRefresh` samt ihren Formen
+**Warum getrennt:** das ist, was **A5**, **A6** und **A4b** brauchen, und es sind die Methoden mit
+Nebenwirkung — Discover und Refresh lösen auf der Plattform Arbeit aus. Sie gehören hinter den
+Whitelist-Filter aus A4a, nicht davor.
+**Besonderheit:** `queueCollectionRefresh` läuft über den **Ops**-Zugangsdatensatz, alles andere
+über Read (V15).
 
 ### A8 — Zustandsmodell und Fehlerübersetzung · **vorgezogen vor A5**
 **Deckt:** V32 (Vertragsteil) · **ID bleibt A8**, die Position ändert sich
@@ -428,24 +471,30 @@ Aufrufzahl messen.
 ## 5. Abhängigkeiten
 
 ```
-A0 (E5) ──► A2 (E4) ──► A3 ──► A8 ──┬──► A4a ──┬──► A4b
-                                     │          └──► A4c (Schema)
-                                     │
-                                     └──► A5 (E7) ──► A6 (E1)
-                                          A7a ──► A7b ──► A7c (E8)
-                                          A9 (E6)
-                                          A11 (E6)
+A1 ✔ ──► A2 ✔ ──► A8 ✔ ──► A3a ──┬──► A4a ──┬──► A3b ──► A4b
+                                  │          └──► A4c (Schema)
+                                  │
+                                  ├──► A7a ──► A7b ──► A7c (E8)
+                                  ├──► A9 (E6)
+                                  └──► A11 (E6)
+
+A3b ──► A5 (E7) ──► A6 (E1)
 
 A5, A6, A7a-c, A9, A11 ──► A10 ──► Flag an ──► Abbauplan R2/R3
 ```
 
+Stand 15.10.2026: A1, A2 und A8 sind gebaut und committet, dazu eine Korrekturrunde nach dem
+Code-Review (`ca8c588`). Nächstes Paket ist A3a.
+
 Änderungen gegenüber v1: A8 ist von hinten nach vorn gewandert und Voraussetzung für alle Routen;
 A4 ist in drei Pakete zerfallen, von denen nur A4a Voraussetzung für die Routen ist; A11 ist neu;
-A7 ist in drei Pakete zerfallen, die aufeinander folgen.
+A7 ist in drei Pakete zerfallen, die aufeinander folgen; A3 ist in A3a und A3b geteilt
+(15.10.2026), wobei A3b hinter A4a liegt, weil Discover und Refresh Nebenwirkungen auf der
+Plattform haben und nicht vor dem Whitelist-Filter laufen dürfen.
 
-`[Schlussfolgerung]` A4a, A5, A7a, A9 und A11 sind nach A8 parallelisierbar. A4b und A4c dürfen
-nachrücken: ohne sie wird der Index träger, aber keine fremde Collection gezogen — das verhindert
-A4a allein.
+`[Schlussfolgerung]` A4a, A7a, A9 und A11 sind nach A3a parallelisierbar. A5 und A6 hängen
+zusätzlich an A3b, A3b hängt an A4a. A4b und A4c dürfen nachrücken: ohne sie wird der Index träger,
+aber keine fremde Collection gezogen — das verhindert A4a allein.
 
 ---
 
