@@ -12,7 +12,7 @@ ungeprüftes Versprechen.
 | Regel-Gate | `scripts/check-rules.mjs` | Registrierte Projektregeln gegen den Repo-Stand | noch offen — es existiert noch keine registrierte Regel, ein Rot-Fall ist damit noch nicht erzeugbar | 08.09.2026: Exit 0 mit „Keine Regeln registriert" (leerer Harness) |
 | Vertrags-Gate | `scripts/check-contract.mjs` | Handoff-Verträge unter `state/tasks/` auf Vollständigkeit/Konsistenz | noch offen | 08.09.2026: „1 Vertrag/Verträge geprüft, keine Befunde" über `state/tasks/harness-phase1-skelett.md` |
 | Secret-Gate | `scripts/check-secrets.mjs` | Ob eine getrackte Datei auf `.env.local` oder `.env.<irgendwas>.local` passt (reine Dateinamensprüfung über `git ls-files`, kein Inhaltsscan) | 08.09.2026, echter Gegentest: leere `.env.test.local` angelegt und mit `git add -f` getrackt → Exit 1, „✗ 1 Befund(e) — lokale Umgebungsdatei(en) unter Versionskontrolle: - .env.test.local (entfernen mit: git rm --cached .env.test.local)". Danach `git rm --cached` + Datei gelöscht | 08.09.2026: „✓ 794 getrackte Dateien geprüft, keine lokale Umgebungsdatei getrackt." → Exit 0 (Normalzustand des Repos; `.env` und die `.template`-Dateien sind absichtlich getrackt und lösen bewusst nicht aus) |
-| gitleaks | `.github/workflows/ci.yml` (Schritt „Secret scan (gitleaks)"), Image `zricethezav/gitleaks:v8.30.1` | Secret-Muster im Arbeitsbaum (`detect --source /repo --no-git --redact`). Bewusst **kein** Historien-Scan — siehe `docs/adr/0001-kein-historien-scan.md` | 08.09.2026, Positivkontrolle: Datei `gitleaks-probe.tmp.txt` mit AWS-förmigem Testmuster im Repo-Wurzelverzeichnis → Exit 1, „leaks found: 1", RuleID `aws-access-token`, Entropy 3.684184. Eine Kopie derselben Datei unter `node_modules/` wurde **nicht** gemeldet → gitignorierte Pfade sind außerhalb des Scans, der CI-Lauf nach `npm ci` verhält sich also wie der lokale. Beide Proben danach gelöscht | 08.09.2026, erster echter Lauf über das unveränderte Repo: „scan completed in 8.41s / no leaks found" → Exit 0. **Keine `.gitleaks.toml` nötig**: weder `.env` noch `.env.local.template`/`.env.production.template` haben ausgelöst, es wurde daher keine Allowlist auf Verdacht angelegt |
+| gitleaks | `.github/workflows/ci.yml` (Schritt „Secret scan (gitleaks)"), Image `zricethezav/gitleaks:v8.30.1` | Secret-Muster im Arbeitsbaum (`detect --source /repo --no-git --redact`). Bewusst **kein** Historien-Scan — siehe `docs/adr/0001-kein-historien-scan.md`. **Wer einen Fund hier einträgt, zitiert den Fundwert NICHT** — der Scanner läuft über diese Datei und schlägt auf das Zitat genauso an wie auf das Original (belegt am 28.10.2026, siehe Log) | 08.09.2026, Positivkontrolle: Datei `gitleaks-probe.tmp.txt` mit AWS-förmigem Testmuster im Repo-Wurzelverzeichnis → Exit 1, „leaks found: 1", RuleID `aws-access-token`, Entropy 3.684184. Eine Kopie derselben Datei unter `node_modules/` wurde **nicht** gemeldet → gitignorierte Pfade sind außerhalb des Scans, der CI-Lauf nach `npm ci` verhält sich also wie der lokale. Beide Proben danach gelöscht | 08.09.2026, erster echter Lauf über das unveränderte Repo: „scan completed in 8.41s / no leaks found" → Exit 0. **Keine `.gitleaks.toml` nötig**: weder `.env` noch `.env.local.template`/`.env.production.template` haben ausgelöst, es wurde daher keine Allowlist auf Verdacht angelegt |
 | Commit-Guard | Regel 1 (Hook), Zeile 150 | Commit/Push-Zugriff auf geteilte Dateien und Freigabe-/Frischefenster-Pflicht | 08.09.2026, drei belegte Fälle: (1) Bash-Zugriff auf geteilte `.claude/settings.json` via `git status && echo --- && git diff -- .claude/settings.json` → „commit-guard: Bash-Zugriff auf geteilte .claude/settings.json blockiert."; (2) `git commit`/`push` ohne `state/freigabe-commit.md` → „git commit/push ohne Freigabe-Datei (state/freigabe-commit.md) verweigert."; (3) Freigabe älter als 10 Minuten → „ist X Minuten alt (Frischefenster 10 Minuten)" [Annahme: Wortlaut aus dem Quelltext, am 08.09.2026 vom Menschen bestätigt ausgelöst; exakte Meldung beim nächsten Auftreten aus der Sitzung übernehmen] | 08.09.2026: `git add state/reibung.md && git commit …` mit frischer Freigabe → Commit `b119f6a`, Freigabedatei danach verbraucht |
 | Branch Protection | keine Repo-Datei — GitHub-Ruleset auf `main` (Settings → Rules → Rulesets) | Ob direkt auf `main` gepusht werden kann und ob der Required Status Check `check` grün sein muss, bevor gemergt wird | 09.09.2026, echter Gegentest: leerer Commit direkt auf `main`, dann `git push` → abgewiesen. Wörtlich: `error: GH013: Repository rule violations found for refs/heads/main` · `- Changes must be made through a pull request.` · `- Required status check "check" is expected.` · `! [remote rejected] main -> main (push declined due to repository rule violations)`. Der Testcommit blieb lokal und wurde mit `git reset --hard origin/main` verworfen | 09.09.2026: Pull Request #1 (`harness/phase1-skelett` → `main`, 16 Commits) mit grünem `check` gemergt → Merge-Commit `e15db1d`. Erster Merge durchs Tor |
 | Dependency-Audit | `.github/workflows/ci.yml` (Schritt „Dependency audit"), läuft **vor** `npm run build` | Bekannte Schwachstellen im Produktions-Abhängigkeitsbaum: `npm audit --omit=dev --audit-level=critical`. Der Schwellwert `critical` ist eine **bewusste Entscheidung**, keine Lockerung — Begründung, verworfene Optionen und Revisionsbedingung in `docs/adr/0002-abhaengigkeiten-zurueckgestellt.md` | 09.09.2026, echter Gegentest: derselbe Lauf mit abgesenktem Schwellwert, `npm audit --omit=dev --audit-level=high` → **Exit 1**, Zusammenfassung wörtlich: „54 vulnerabilities (2 low, 38 moderate, 14 high)". Die CI-Datei wurde dafür **nicht** geändert, der Schwellwert nur auf der Kommandozeile abgesenkt | 09.09.2026: `npm audit --omit=dev --audit-level=critical` → **Exit 0**, identische Zusammenfassung „54 vulnerabilities (2 low, 38 moderate, 14 high)" — **keine kritische**, deshalb grün. Ohne `--omit=dev` meldet dieselbe Messung „61 vulnerabilities (2 low, 40 moderate, 18 high, 1 critical)" → die eine kritische steckt ausschließlich in Dev-Abhängigkeiten und erreicht kein Produktionsartefakt. Am 09.09.2026 ist der Build in der CI gelaufen, der Audit-Schritt war also grün |
@@ -89,28 +89,43 @@ nicht die Tabelle oben stillschweigend überschreiben.
   `NFT_DATA_PLATFORM_ENABLED=true` und einer fehlenden `NFT_API_*`-Variablen
   an, fährt `npm run env:check` und trägt den Wortlaut hier ein.
 
-- 28.10.2026 — gitleaks, **erster echter Rot-Fall** (bisher war nur eine
-  absichtliche Probe kalibriert). Im CI-Lauf von PR #8 meldete
-  `detect --source /repo --no-git --redact` fünf Befunde, alle in Testdateien
-  der Plattform-Schicht, alle RuleID `generic-api-key`: viermal
-  `process.env.NFT_API_OPS_KEY = 'ops-key-123456'` (Entropie 3.664498) in
-  `src/app/api/nft/detail/route.test.ts:196`,
-  `src/lib/nft-data-platform/config.test.ts:60`,
-  `src/lib/nft-data-platform/read.test.ts:152`,
-  `src/lib/nft-data-platform/client.test.ts:152`, dazu
-  `apiKey: 'key-123456789012'` (Entropie 3.750000) in
-  `src/lib/nft-data-platform/signing.test.ts:167`. Exit 1, „leaks found: 5".
-  **Keiner der Werte war ein Secret** — es waren erfundene Attrappen; die Regel
+- 28.10.2026 — gitleaks, **erster echter Rot-Fall und erster Grün-Nachweis**
+  (bisher war nur eine absichtliche Probe kalibriert). Zwei Läufe, und der
+  zweite ist der interessante.
+
+  **Rot, Lauf 1** (PR #8, Job 122868365906): fünf Befunde, alle RuleID
+  `generic-api-key`, alle in Testdateien der Plattform-Schicht — viermal ein
+  Wert, der an `NFT_API_OPS_KEY` zugewiesen wurde (Entropie 3.664498) in
+  `src/app/api/nft/detail/route.test.ts`, `…/config.test.ts`,
+  `…/read.test.ts`, `…/client.test.ts`, dazu einmal ein an `apiKey`
+  zugewiesener Wert (Entropie 3.750000) in `…/signing.test.ts`. Exit 1,
+  „leaks found: 5". **Keiner war ein Secret** — erfundene Attrappen; die Regel
   schlägt auf den Variablennamen plus Entropie an, nicht auf echte Herkunft.
-  **Behoben durch Entschärfen der Attrappen, nicht durch eine Allowlist:** die
-  Werte heißen jetzt `read-key`, `ops-key`, `api-key` — 7 bis 8 Zeichen,
-  Entropie um 2,8, damit unter Längen- und Entropieschwelle der Regel. Eine
-  `.gitleaks.toml` mit einer Ausnahme für Testdateien wäre der bequemere Weg
-  gewesen und hätte das Gate dauerhaft geschwächt: sie würde auch ein echtes
-  Leck in einer Testdatei durchlassen. Die Entscheidung von Phase 2c, **keine**
-  Allowlist auf Verdacht anzulegen, bleibt damit unangetastet.
-  `[offene Unsicherheit]` Dass die neuen Werte nicht mehr auslösen, ist
-  **nicht lokal belegt** — der Docker-Daemon lief auf dem Entwicklungsrechner
-  nicht (`npipe:////./pipe/dockerDesktopLinuxEngine` nicht erreichbar). Der
-  Grün-Nachweis steht aus und kommt aus dem nächsten CI-Lauf; wer ihn sieht,
-  trägt ihn hier ein.
+
+  **Behoben durch Entschärfen der Attrappen, nicht durch eine Allowlist.** Die
+  Werte sind jetzt sieben bis acht Zeichen lang mit Entropie um 2,8 und liegen
+  damit unter Längen- und Entropieschwelle der Regel. Eine `.gitleaks.toml` mit
+  einer Ausnahme für Testdateien wäre der bequemere Weg gewesen und hätte das
+  Gate dauerhaft geschwächt: sie würde auch ein echtes Leck in einer Testdatei
+  durchlassen. Die Entscheidung von Phase 2c, **keine** Allowlist auf Verdacht
+  anzulegen, bleibt unangetastet.
+
+  **Grün für die Testdateien, Lauf 2** (Job 122880365928): die fünf Befunde
+  sind weg. Damit ist die offene Unsicherheit des ersten Eintrags aufgelöst —
+  lokal war sie nicht prüfbar, weil der Docker-Daemon auf dem
+  Entwicklungsrechner nicht lief.
+
+  **Rot, Lauf 2, aus eigener Hand:** derselbe Lauf meldete zwei neue Befunde —
+  in **dieser Datei**, Zeilen 96 und 101. Der erste Eintrag hatte die
+  Fundwerte **wörtlich zitiert**, um den Vorfall zu dokumentieren. Entropie und
+  Regel sind dieselben; dem Scanner ist gleichgültig, dass der Wert in einem
+  Protokoll steht und nicht in Code.
+
+  **Die Lehre, und sie ist allgemein:** Einen Secret-Scanner-Befund zu
+  dokumentieren, indem man ihn zitiert, löst den Scanner erneut aus. Ein
+  Kalibrierungs-Log braucht Regel, Entropie, Datei, Zeile und Ursache — den
+  Wortlaut des Fundes braucht es nicht, und er ist genau der Teil, der wieder
+  anschlägt. Dieser Eintrag nennt deshalb keinen einzigen Fundwert mehr.
+  `[Schlussfolgerung]` Dieselbe Falle steht jedem bevor, der einen künftigen
+  Fund hier einträgt — deshalb steht sie oben in der Zeile zu gitleaks als
+  Hinweis, nicht nur hier im Log.
