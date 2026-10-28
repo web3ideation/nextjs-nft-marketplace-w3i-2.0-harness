@@ -190,10 +190,10 @@ beforeEach(() => {
     delete process.env.NFT_DATA_PLATFORM_ENABLED;
     process.env.NFT_API_BASE_URL = 'https://platform.example.test';
     process.env.NFT_API_READ_CLIENT_ID = 'alpha-read';
-    process.env.NFT_API_READ_KEY = 'read-key-123456';
+    process.env.NFT_API_READ_KEY = 'read-key';
     process.env.NFT_API_READ_SECRET = 'read-secret';
     process.env.NFT_API_OPS_CLIENT_ID = 'alpha-ops';
-    process.env.NFT_API_OPS_KEY = 'ops-key-123456';
+    process.env.NFT_API_OPS_KEY = 'ops-key';
     process.env.NFT_API_OPS_SECRET = 'ops-secret';
 });
 

@@ -146,10 +146,10 @@ beforeEach(() => {
     process.env.NFT_DATA_PLATFORM_ENABLED = 'true';
     process.env.NFT_API_BASE_URL = 'https://platform.example.test';
     process.env.NFT_API_READ_CLIENT_ID = 'alpha-read';
-    process.env.NFT_API_READ_KEY = 'read-key-123456';
+    process.env.NFT_API_READ_KEY = 'read-key';
     process.env.NFT_API_READ_SECRET = 'read-secret';
     process.env.NFT_API_OPS_CLIENT_ID = 'alpha-ops';
-    process.env.NFT_API_OPS_KEY = 'ops-key-123456';
+    process.env.NFT_API_OPS_KEY = 'ops-key';
     process.env.NFT_API_OPS_SECRET = 'ops-secret';
     process.env.NFT_API_READ_CONCURRENCY = '2';
     process.env.NFT_API_MAX_ATTEMPTS = '3';
@@ -173,7 +173,7 @@ describe('requestPlatform — Erfolgsfall', () => {
         expect(calls).toHaveLength(1);
         expect(calls[0].url).toBe('https://platform.example.test/api/v1/tokens/11155111/0xabc');
         expect(calls[0].headers['x-client-id']).toBe('alpha-read');
-        expect(calls[0].headers['x-api-key']).toBe('read-key-123456');
+        expect(calls[0].headers['x-api-key']).toBe('read-key');
         expect(calls[0].headers['x-signature']).toMatch(/^[a-f0-9]{64}$/);
         expect(calls[0].headers['x-timestamp']).toBe('1750000000');
     });
@@ -213,7 +213,7 @@ describe('requestPlatform — Erfolgsfall', () => {
         );
 
         expect(calls[0].headers['x-client-id']).toBe('alpha-ops');
-        expect(calls[0].headers['x-api-key']).toBe('ops-key-123456');
+        expect(calls[0].headers['x-api-key']).toBe('ops-key');
     });
 
     it('nimmt die Query in den signierten Pfad, nicht nur in die URL', async () => {

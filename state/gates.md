@@ -88,3 +88,29 @@ nicht die Tabelle oben stillschweigend überschreiben.
   Wer das nachholen will, legt lokal eine `.env.local` mit
   `NFT_DATA_PLATFORM_ENABLED=true` und einer fehlenden `NFT_API_*`-Variablen
   an, fährt `npm run env:check` und trägt den Wortlaut hier ein.
+
+- 28.10.2026 — gitleaks, **erster echter Rot-Fall** (bisher war nur eine
+  absichtliche Probe kalibriert). Im CI-Lauf von PR #8 meldete
+  `detect --source /repo --no-git --redact` fünf Befunde, alle in Testdateien
+  der Plattform-Schicht, alle RuleID `generic-api-key`: viermal
+  `process.env.NFT_API_OPS_KEY = 'ops-key-123456'` (Entropie 3.664498) in
+  `src/app/api/nft/detail/route.test.ts:196`,
+  `src/lib/nft-data-platform/config.test.ts:60`,
+  `src/lib/nft-data-platform/read.test.ts:152`,
+  `src/lib/nft-data-platform/client.test.ts:152`, dazu
+  `apiKey: 'key-123456789012'` (Entropie 3.750000) in
+  `src/lib/nft-data-platform/signing.test.ts:167`. Exit 1, „leaks found: 5".
+  **Keiner der Werte war ein Secret** — es waren erfundene Attrappen; die Regel
+  schlägt auf den Variablennamen plus Entropie an, nicht auf echte Herkunft.
+  **Behoben durch Entschärfen der Attrappen, nicht durch eine Allowlist:** die
+  Werte heißen jetzt `read-key`, `ops-key`, `api-key` — 7 bis 8 Zeichen,
+  Entropie um 2,8, damit unter Längen- und Entropieschwelle der Regel. Eine
+  `.gitleaks.toml` mit einer Ausnahme für Testdateien wäre der bequemere Weg
+  gewesen und hätte das Gate dauerhaft geschwächt: sie würde auch ein echtes
+  Leck in einer Testdatei durchlassen. Die Entscheidung von Phase 2c, **keine**
+  Allowlist auf Verdacht anzulegen, bleibt damit unangetastet.
+  `[offene Unsicherheit]` Dass die neuen Werte nicht mehr auslösen, ist
+  **nicht lokal belegt** — der Docker-Daemon lief auf dem Entwicklungsrechner
+  nicht (`npipe:////./pipe/dockerDesktopLinuxEngine` nicht erreichbar). Der
+  Grün-Nachweis steht aus und kommt aus dem nächsten CI-Lauf; wer ihn sieht,
+  trägt ihn hier ein.

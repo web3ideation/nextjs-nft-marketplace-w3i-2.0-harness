@@ -164,7 +164,7 @@ describe('currentTimestampSeconds', () => {
 describe('buildAuthHeaders', () => {
     const credentials = {
         clientId: 'alpha-read',
-        apiKey: 'key-123456789012',
+        apiKey: 'api-key',
         apiSecret: GET_CASE.secret,
     };
 
