@@ -47,7 +47,7 @@ const token = {
     chainId: 11155111,
     contractAddress: '0xabc',
     tokenId: '7',
-    standard: 'ERC721',
+    standard: 'erc721',
     name: 'Testtoken',
     description: null,
     externalUrl: null,
@@ -71,7 +71,7 @@ const collection = {
     _id: '507f1f77bcf86cd799439012',
     chainId: 11155111,
     contractAddress: '0xabc',
-    standard: 'ERC721',
+    standard: 'erc721',
     name: 'Testsammlung',
     symbol: 'TST',
     description: null,
@@ -199,10 +199,10 @@ describe('Erfolgs-Hülle', () => {
 });
 
 describe('Ownership — die Form hängt am standard', () => {
-    it('erwartet bei ERC721 Eigentümer-Zeilen ohne balance', () => {
+    it('erwartet bei erc721 Eigentümer-Zeilen ohne balance', () => {
         const parsed = tokenOwnersResponseSchema.safeParse({
             ok: true,
-            standard: 'ERC721',
+            standard: 'erc721',
             items: [
                 {
                     chainId: 11155111,
@@ -218,7 +218,7 @@ describe('Ownership — die Form hängt am standard', () => {
         expect(parsed.success).toBe(true);
     });
 
-    it('erwartet bei ERC1155 ein balance-Feld', () => {
+    it('erwartet bei erc1155 ein balance-Feld', () => {
         const base = {
             chainId: 11155111,
             contractAddress: '0xabc',
@@ -228,12 +228,12 @@ describe('Ownership — die Form hängt am standard', () => {
         };
 
         expect(
-            tokenOwnersResponseSchema.safeParse({ ok: true, standard: 'ERC1155', items: [base], pageInfo }).success
+            tokenOwnersResponseSchema.safeParse({ ok: true, standard: 'erc1155', items: [base], pageInfo }).success
         ).toBe(false);
         expect(
             tokenOwnersResponseSchema.safeParse({
                 ok: true,
-                standard: 'ERC1155',
+                standard: 'erc1155',
                 items: [{ ...base, balance: '3' }],
                 pageInfo,
             }).success
@@ -242,7 +242,7 @@ describe('Ownership — die Form hängt am standard', () => {
 
     it('weist einen unbekannten standard ab', () => {
         expect(
-            tokenOwnersResponseSchema.safeParse({ ok: true, standard: 'ERC404', items: [], pageInfo }).success
+            tokenOwnersResponseSchema.safeParse({ ok: true, standard: 'ERC721', items: [], pageInfo }).success
         ).toBe(false);
     });
 });

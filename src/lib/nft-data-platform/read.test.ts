@@ -56,7 +56,7 @@ function makeToken(tokenId: string): Record<string, unknown> {
         chainId: 11155111,
         contractAddress: '0xabc',
         tokenId,
-        standard: 'ERC721',
+        standard: 'erc721',
         name: `Token ${tokenId}`,
         description: null,
         externalUrl: null,
@@ -87,7 +87,7 @@ function makeCollection(contractAddress: string): Record<string, unknown> {
         _id: `id-${contractAddress}`,
         chainId: 11155111,
         contractAddress,
-        standard: 'ERC721',
+        standard: 'erc721',
         name: `Sammlung ${contractAddress}`,
         symbol: null,
         description: null,
@@ -193,11 +193,11 @@ describe('getTokenDetail', () => {
 });
 
 describe('getTokenOwners', () => {
-    it('unterscheidet ERC721 und ERC1155 am standard', async () => {
+    it('unterscheidet erc721 und erc1155 am standard — die Plattform schreibt KLEIN', async () => {
         const { deps } = harness([
             {
                 ok: true,
-                standard: 'ERC1155',
+                standard: 'erc1155',
                 items: [
                     {
                         chainId: 11155111,
@@ -218,15 +218,15 @@ describe('getTokenOwners', () => {
             deps
         );
 
-        expect(owners.standard).toBe('ERC1155');
-        if (owners.standard === 'ERC1155') {
+        expect(owners.standard).toBe('erc1155');
+        if (owners.standard === 'erc1155') {
             expect(owners.items[0].balance).toBe('3');
         }
     });
 
     it('sendet den Standard-Umfang mit, statt ihn der Plattform zu überlassen', async () => {
         const { paths, deps } = harness([
-            { ok: true, standard: 'ERC721', items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } },
+            { ok: true, standard: 'erc721', items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } },
         ]);
 
         await getTokenOwners({ chainId: 11155111, contractAddress: '0xabc', tokenId: '7' }, {}, deps);

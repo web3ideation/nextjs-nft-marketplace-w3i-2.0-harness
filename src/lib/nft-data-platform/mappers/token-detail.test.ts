@@ -58,7 +58,7 @@ function token(overrides: Partial<PlatformToken> = {}): PlatformToken {
         chainId: 11155111,
         contractAddress: '0xAbC',
         tokenId: '7',
-        standard: 'ERC721',
+        standard: 'erc721',
         name: 'Affe Nummer sieben',
         description: 'Ein Affe.',
         externalUrl: 'https://example.test/7',
@@ -89,7 +89,7 @@ function collection(): PlatformCollection {
         _id: 'col1',
         chainId: 11155111,
         contractAddress: '0xAbC',
-        standard: 'ERC721',
+        standard: 'erc721',
         name: 'Affensammlung',
         symbol: 'APE',
         description: null,
@@ -120,7 +120,7 @@ const pageInfo = { limit: 50, hasMore: false, nextCursor: null };
 function erc721Owners(ownerAddress: string): PlatformTokenOwnersResponse {
     return {
         ok: true,
-        standard: 'ERC721',
+        standard: 'erc721',
         items: [
             {
                 chainId: 11155111,
@@ -143,7 +143,7 @@ function erc721Owners(ownerAddress: string): PlatformTokenOwnersResponse {
 function erc1155Owners(rows: Array<[string, string]>): PlatformTokenOwnersResponse {
     return {
         ok: true,
-        standard: 'ERC1155',
+        standard: 'erc1155',
         items: rows.map(([ownerAddress, balance]) => ({
             chainId: 11155111,
             contractAddress: '0xAbC',
@@ -328,9 +328,9 @@ describe('Contract-Teil', () => {
         expect(overlay.contract.address).toBe('0xAbC');
     });
 
-    it('setzt contractType aus dem Standard des Tokens — die Route liest ihn so', () => {
+    it('schreibt contractType GROSS — die Route vergleicht gegen ERC1155, die Plattform liefert klein', () => {
         const overlay = buildTokenDetailOverlay({
-            token: token({ standard: 'ERC1155' }),
+            token: token({ standard: 'erc1155' }),
             owners: erc1155Owners([['0xaaa', '2']]),
             collection: collection(),
         });
@@ -340,7 +340,7 @@ describe('Contract-Teil', () => {
 
     it('setzt Eigentümer und Guthaben auf den größten Halter', () => {
         const overlay = buildTokenDetailOverlay({
-            token: token({ standard: 'ERC1155' }),
+            token: token({ standard: 'erc1155' }),
             owners: erc1155Owners([
                 ['0xaaa', '2'],
                 ['0xbbb', '9'],
@@ -355,7 +355,7 @@ describe('Contract-Teil', () => {
 
     it('lässt Eigentümer null, wenn niemand ein Guthaben hat', () => {
         const overlay = buildTokenDetailOverlay({
-            token: token({ standard: 'ERC1155' }),
+            token: token({ standard: 'erc1155' }),
             owners: erc1155Owners([]),
             collection: collection(),
         });

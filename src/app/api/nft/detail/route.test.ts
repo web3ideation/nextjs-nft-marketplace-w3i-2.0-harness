@@ -81,7 +81,7 @@ const platformToken = {
     chainId: 11155111,
     contractAddress: '0xabc',
     tokenId: '7',
-    standard: 'ERC721',
+    standard: 'erc721',
     name: 'Plattform-Name',
     description: 'von der Plattform',
     externalUrl: null,
@@ -116,7 +116,7 @@ const platformToken = {
 
 const platformOwners = {
     ok: true as const,
-    standard: 'ERC721' as const,
+    standard: 'erc721' as const,
     items: [
         {
             chainId: 11155111,
@@ -133,7 +133,7 @@ const platformCollection = {
     _id: 'col1',
     chainId: 11155111,
     contractAddress: '0xabc',
-    standard: 'ERC721',
+    standard: 'erc721',
     name: 'Plattform-Sammlung',
     symbol: 'PLT',
     description: null,

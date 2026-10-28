@@ -32,11 +32,29 @@
  *   Plattform-Pfad nicht gebraucht — im Rückfallpfad bleibt es nötig (V32).
  */
 
+import { PLATFORM_STANDARD } from '@/lib/nft-data-platform/schemas';
 import type {
     PlatformCollection,
     PlatformToken,
     PlatformTokenOwnersResponse,
 } from '@/lib/nft-data-platform/types';
+
+/**
+ * Übersetzt die Standard-Schreibweise der Plattform in die des Marktplatzes.
+ *
+ * Die Plattform liefert `erc721` klein, die Detailroute vergleicht
+ * `tokenStandard === 'ERC1155'`, und `marketplace_items.tokenStandard` kommt
+ * großgeschrieben aus TheGraph. **Hier liegt die Grenze zwischen den beiden
+ * Welten.** Ohne diese Übersetzung greift der ERC-1155-Zweig der Route nie, und
+ * zwar ohne Typfehler und ohne Fehlermeldung — der angezeigte Eigentümer wäre
+ * bei jedem ERC-1155 der falsche.
+ *
+ * @param standard - Standard in der Schreibweise der Plattform
+ * @returns Standard in der Schreibweise des Marktplatzes
+ */
+function toMarketplaceStandard(standard: string): string {
+    return standard.toUpperCase();
+}
 
 /** Bildvarianten in der Form, die die Detailroute erwartet. */
 export type DetailImageVariants = {
@@ -162,7 +180,7 @@ export function mapPlatformOwnersToBalances(
 ): Record<string, number> {
     const balances: Record<string, number> = {};
 
-    if (owners.standard === 'ERC721') {
+    if (owners.standard === PLATFORM_STANDARD.erc721) {
         for (const entry of owners.items) {
             balances[entry.ownerAddress.toLowerCase()] = 1;
         }
@@ -205,7 +223,8 @@ export function mapPlatformToContract(params: {
         name: params.collection?.name ?? null,
         symbol: params.collection?.symbol ?? null,
         address: params.token.contractAddress,
-        contractType: params.token.standard,
+        // Großgeschrieben: die Route vergleicht gegen 'ERC1155'.
+        contractType: toMarketplaceStandard(params.token.standard),
         // Die Plattform pickt `metadataUriResolved` in A3a nicht. Null statt
         // eines geratenen Werts; wer die URI braucht, ergänzt das Schema in A3a
         // und begründet es dort.

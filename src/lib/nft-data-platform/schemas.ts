@@ -32,6 +32,27 @@
 
 import { z } from 'zod';
 
+/**
+ * Die Schreibweise, in der die Plattform NFT-Standards liefert: **klein**.
+ *
+ * `packages/domain/src/index.ts:19` — `z.enum(["erc721", "erc1155"])`. Der
+ * Marktplatz schreibt sie dagegen groß: die Detailroute vergleicht
+ * `tokenStandard === 'ERC1155'`, `marketplace_items.tokenStandard` kommt
+ * großgeschrieben aus TheGraph, und `nft_metadata.contract.contractType`
+ * ebenso.
+ *
+ * **Zwei Schreibweisen für denselben Begriff, und keine Seite ist falsch.** Die
+ * Grenze liegt genau hier: Schemata und Lesemethoden sprechen die Form der
+ * Plattform, die Mapper übersetzen in die Form des Marktplatzes. Wer das
+ * verwechselt, bekommt keinen Typfehler, sondern einen stillen Zweig, der nie
+ * greift — ein ERC-721 würde als ERC-1155 behandelt und jede Ownership-Antwort
+ * abgewiesen.
+ */
+export const PLATFORM_STANDARD = {
+    erc721: 'erc721',
+    erc1155: 'erc1155',
+} as const;
+
 /** ISO-Zeitstempel als Text — die Plattform liefert nie `Date`-Objekte. */
 const isoTimestamp = z.string().min(1);
 
@@ -208,13 +229,13 @@ export const tokenDetailResponseSchema = successEnvelope({ token: platformTokenS
 export const tokenOwnersResponseSchema = z.discriminatedUnion('standard', [
     z.object({
         ok: z.literal(true),
-        standard: z.literal('ERC721'),
+        standard: z.literal(PLATFORM_STANDARD.erc721),
         items: z.array(erc721OwnerSchema),
         pageInfo: pageInfoSchema,
     }),
     z.object({
         ok: z.literal(true),
-        standard: z.literal('ERC1155'),
+        standard: z.literal(PLATFORM_STANDARD.erc1155),
         items: z.array(erc1155BalanceSchema),
         pageInfo: pageInfoSchema,
     }),
