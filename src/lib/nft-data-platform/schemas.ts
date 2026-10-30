@@ -284,3 +284,109 @@ export const searchResponseSchema = z.union([
         pageInfo: pageInfoSchema,
     }),
 ]);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Paket A3b — Wallet-Inventar, Discover, Refresh
+//
+// Alle Formen unten sind am Prüfstand (Plattform-`main`) erhoben, nicht aus dem
+// Migrationsdokument. Dieselbe Pick-Regel wie oben: zusätzliche Felder fallen
+// weg, ein fehlendes gebrauchtes Feld bricht laut.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Ein Element des Wallet-Inventars.
+ *
+ * Unterschieden nach `standard` — und zwar in der **kleinen** Schreibweise der
+ * Plattform (siehe `PLATFORM_STANDARD`). Bei ERC-1155 trägt die Zeile ein
+ * `balance`, bei ERC-721 nicht.
+ *
+ * `token` und `collection` sind **nullbar**, und das ist der wichtige Teil:
+ * V2 verlangt, dass eine Holding-Zeile ohne indiziertes Token trotzdem einen
+ * Eintrag ergibt — mit Contract-Adresse und Token-ID. Ein Schema, das `token`
+ * verlangt, würde genau die Token verschlucken, die noch auf das Indexing
+ * warten.
+ */
+export const walletInventoryItemSchema = z.union([
+    z.object({
+        standard: z.literal(PLATFORM_STANDARD.erc721),
+        chainId: z.number().int(),
+        contractAddress: z.string().min(1),
+        tokenId: z.string().min(1),
+        ownerAddress: z.string().min(1),
+        updatedAt: isoTimestamp,
+        token: platformTokenSchema.nullable(),
+        collection: platformCollectionSchema.nullable(),
+    }),
+    z.object({
+        standard: z.literal(PLATFORM_STANDARD.erc1155),
+        chainId: z.number().int(),
+        contractAddress: z.string().min(1),
+        tokenId: z.string().min(1),
+        ownerAddress: z.string().min(1),
+        balance: z.string().min(1),
+        updatedAt: isoTimestamp,
+        token: platformTokenSchema.nullable(),
+        collection: platformCollectionSchema.nullable(),
+    }),
+]);
+
+/** `GET /api/v1/owners/wallets/{ownerAddress}?chainIds=…` */
+export const walletInventoryResponseSchema = successEnvelope({
+    chainIds: z.array(z.number().int()),
+    items: z.array(walletInventoryItemSchema),
+    pageInfo: pageInfoSchema,
+});
+
+/**
+ * Zustand einer Identität in der Discover-Antwort.
+ *
+ * `ready` heißt: schon indiziert, `token` und `collection` liegen bei.
+ * `queued` heißt: Auftrag angelegt, `jobId` und `queuedJobId` gesetzt.
+ * `failed` heißt: die Plattform hat abgelehnt, `message` nennt den Grund — das
+ * ist ihre eigene Env-Allowlist als Notbremse, nicht unser Whitelist-Filter.
+ */
+export const discoveryStatusSchema = z.enum(['ready', 'queued', 'failed']);
+
+/**
+ * Ein Element der Discover-Antwort.
+ *
+ * **Die Antwort ist keine Quittung, sondern teilweise schon das Ergebnis:** bei
+ * `ready` liegen Token und Collection vollständig bei. Ein Aufrufer kann daraus
+ * unmittelbar anzeigen, was schon da ist, und braucht keinen zweiten Aufruf.
+ */
+export const discoverItemSchema = z.object({
+    chainId: z.number().int(),
+    contractAddress: z.string().min(1),
+    tokenId: z.string().min(1),
+    discoveryStatus: discoveryStatusSchema,
+    queuedJobId: z.string().min(1).nullable(),
+    jobId: z.string().min(1).nullable(),
+    token: platformTokenSchema.nullable(),
+    collection: platformCollectionSchema.nullable(),
+    message: z.string().min(1).optional(),
+});
+
+/** `POST /api/v1/tokens/discover` und `POST /api/v1/owners/wallets/discover` */
+export const discoverResponseSchema = successEnvelope({
+    summary: z.object({
+        total: z.number().int(),
+        ready: z.number().int(),
+        queued: z.number().int(),
+        failed: z.number().int(),
+    }),
+    items: z.array(discoverItemSchema),
+});
+
+/**
+ * `POST /api/v1/refresh/token` und `POST /api/v1/refresh/collection`.
+ *
+ * Die Plattform antwortet mit **wechselndem** HTTP-Status
+ * (`persistedJob.statusCode`). Solange er im 2xx-Bereich liegt, sieht unser
+ * Client ihn als Erfolg; ein Status außerhalb käme als `PlatformResponseError`
+ * an und wäre dann in `write.ts` zu behandeln, nicht beim Aufrufer.
+ */
+export const refreshJobResponseSchema = successEnvelope({
+    jobId: z.string().min(1),
+    queueJobId: z.string().min(1).nullable(),
+    status: z.string().min(1),
+});
