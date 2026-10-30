@@ -129,3 +129,36 @@ nicht die Tabelle oben stillschweigend überschreiben.
   `[Schlussfolgerung]` Dieselbe Falle steht jedem bevor, der einen künftigen
   Fund hier einträgt — deshalb steht sie oben in der Zeile zu gitleaks als
   Hinweis, nicht nur hier im Log.
+
+- 29.10.2026 — Dependency-Audit, **erster echter Rot-Fall** (die Kalibrierung
+  vom 09.09.2026 stammt aus einem absichtlich abgesenkten Schwellwert, nicht aus
+  einem echten Befund). Im CI-Lauf von PR #8, Job 123036704469, meldete
+  `npm audit --omit=dev --audit-level=critical` Exit 1 mit „67 vulnerabilities
+  (4 low, 35 moderate, 26 high, 2 critical)". Die zwei kritischen:
+  `@sentry/nextjs` (GHSA-mchm-gjx6-7h55) und `next` mit vier Advisories,
+  darunter GHSA-2464-fhr4-w9xw (unauthentifizierte Remote-Code-Ausführung in der
+  Image-Optimization-API) und zwei Cache-Poisoning-Befunde, die selbst gehostete
+  Anwendungen ausdrücklich nennen.
+  **Ursache war nicht der Branch.** Das Lockfile war unverändert; am 15.10.2026
+  ergab dieselbe Messung 54 Befunde ohne kritischen. Die Advisory-Datenbank ist
+  weitergelaufen. `[Schlussfolgerung]` Dieses Gate kann rot werden, ohne dass
+  jemand etwas getan hat — das ist seine Stärke und der Grund, warum es nicht
+  nur beim Abhängigkeits-Wechsel läuft.
+  **Grün, belegt am 29.10.2026:** nach gezielter Aktualisierung von `next` auf
+  15.5.28 und `@sentry/nextjs` auf 10.75.2 — beide innerhalb der deklarierten
+  Bereiche, also reine Lockfile-Aktualisierung — meldet dieselbe Messung
+  „53 vulnerabilities (4 low, 24 moderate, 25 high)", **keinen kritischen**,
+  Exit 0. Dazu `npm run check` Exit 0 und `npm run build` Exit 0.
+  Der Schwellwert wurde **nicht** angehoben, und `npm audit fix --force` wurde
+  **nicht** ausgeführt (hätte `wagmi` auf 3.x und `next` auf 16.x gehoben; nach
+  der gezielten Aktualisierung steht `wagmi` unverändert auf 2.19.5).
+  `package.json` änderte genau zwei Zeilen; der große Lockfile-Diff ist npm, das
+  den transitiven Baum neu auflöst.
+  Nachtrag in `docs/adr/0002-abhaengigkeiten-zurueckgestellt.md`.
+  **Beleg für die Beweglichkeit der Datenbank, nachgetragen am 30.10.2026:**
+  dieselbe Messung einen Tag später ergibt wieder 53 Befunde und keinen
+  kritischen, aber **28 high statt 25** und 21 moderate statt 24 — drei Befunde
+  sind über Nacht hochgestuft worden, ohne dass jemand etwas angefasst hat. Wer
+  eine Zahl aus diesem Log mit einer eigenen Messung vergleicht und eine
+  Abweichung findet, hat deshalb nicht zwingend eine Änderung gefunden. Die
+  Datumsangabe an jeder Zahl ist hier kein Schmuck.
