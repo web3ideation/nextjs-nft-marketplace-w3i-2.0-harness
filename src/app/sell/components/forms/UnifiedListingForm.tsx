@@ -306,6 +306,21 @@ export function UnifiedListingForm({ selectedNFT, whitelistStatus = 'not-started
 
             if (!response.ok) {
                 if (response.status === 404) {
+                    // Zwei verschiedene Lagen hinter demselben Statuscode, und
+                    // die Verwechslung wäre teuer: trägt die Antwort
+                    // TOKEN_NOT_INDEXED, existiert das NFT sehr wohl — die
+                    // Plattform hat es nur noch nicht erfasst. Einem Verkäufer
+                    // zu sagen, sein eigenes NFT gebe es nicht, schickt ihn auf
+                    // die Suche nach einem Fehler, den er nicht gemacht hat
+                    // (Entscheidung 6 der Spec).
+                    const body = await response.json().catch(() => null);
+
+                    if (body?.code === 'TOKEN_NOT_INDEXED') {
+                        throw new Error(
+                            'Dieses NFT wird noch erfasst. Bitte in einigen Minuten erneut versuchen.'
+                        );
+                    }
+
                     throw new Error('NFT nicht gefunden. Bitte Contract-Adresse und Token-ID prüfen.');
                 }
                 throw new Error(`Suche fehlgeschlagen (HTTP ${response.status}).`);

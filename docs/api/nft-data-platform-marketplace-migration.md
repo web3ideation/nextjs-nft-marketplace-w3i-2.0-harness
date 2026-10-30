@@ -1,5 +1,18 @@
 # NFT Data Platform Marketplace Migration
 
+> **Scope note added 2026-09-25 (artefact A-1).** The endpoint and contract details in this
+> document remain authoritative: signing rules, DTO shapes, cursor pagination, route mapping,
+> `404` behaviour and platform constraints. The sections **Implementation Order** and **PR-Ready
+> Delivery Plan** are superseded by `specs/marktplatz-fertigstellung.md` v4 and
+> `state/plan-v1-plattform-integration.md`.
+>
+> Reason: the delivery plan below was drawn up on 2026-08-27/09-03 and does not know V30–V34 or
+> V63 — push notifications, the media block, the whitelist filter, collection registration and
+> rate-limit measurement. It also starts with the wallet migration, whereas the whitelist filter
+> (V33) is a precondition, not cleanup: a single detail-page request for a foreign contract can
+> otherwise pull that collection into indexing. Anyone following the order below loses six V
+> statements silently.
+
 ## Repository Status At A Glance
 
 Marketplace-side file status confirmed against the marketplace repository on 2026-08-27.
@@ -778,9 +791,15 @@ These app-specific features can remain local unless you explicitly want to migra
 
 ## Implementation Order
 
+> **Superseded — see the scope note at the top of this file.** The authoritative order is
+> `state/plan-v1-plattform-integration.md` (packages A0–A10) with the teardown gated separately in
+> `state/plan-v1-abbau-altpfade.md`. The sequence below is kept for reference because the
+> per-PR file lists are still useful, not because the order is.
+
 ## PR-Ready Delivery Plan
 
 This is the recommended change sequence for another developer implementing the migration.
+**Superseded as an order — see the scope note at the top of this file.**
 
 | PR | Scope | Files touched at minimum | Acceptance check |
 | --- | --- | --- | --- |

@@ -1,27 +1,69 @@
 /**
- * NFT Detail API (OPTIMIZED)
- * 
- * GET /api/nft/detail?contractAddress=...&tokenId=...
- * 
- * Data Strategy (per DATA_SYNC_ARCHITECTURE.md):
- * 1. Get from nft_metadata (cached IPFS data)
- * 2. Check if blockchain state is stale (>5min) → fetch fresh if needed
- * 3. Lazy-load IPFS metadata if missing
- * 4. Join with nft_stats and insights
- * 
- * Performance:
- * - IPFS metadata: Cached forever (immutable)
- * - Blockchain state: Cached 5min (on-demand refresh)
- * - Stats: Real-time from MongoDB
+ * Datei: src/app/api/nft/detail/route.ts
+ *
+ * Zweck: GET /api/nft/detail?contractAddress=...&tokenId=... — die Datengrundlage
+ * der NFT-Detailseite.
+ *
+ * Datenstrategie, zwei Pfade seit Paket A7a:
+ *
+ * **Plattform-Pfad** (`isPlatformConfigured()` wahr): Name, Beschreibung,
+ * Bilder, Attribute, Contract-Angaben und Guthaben kommen aus der NFT Data
+ * Platform — drei Aufrufe (Token, Eigentümer, Collection), parallel. Kein
+ * synchrones Nachladen aus Chain oder IPFS (V4).
+ *
+ * **Rückfallpfad** (Flag aus, Variable fehlt, oder Plattform nicht
+ * ansprechbar): der bisherige Weg über `nft_metadata` samt
+ * `ipfsMetadataLazySync`. Die Antwort trägt dann `dataSource:
+ * 'local-fallback'` und `staleWarning: true` (V32).
+ *
+ * **In beiden Pfaden gleich:** der `blockchain`-Block und `approvalStatus`
+ * stammen aus `blockchainStateSync` (5-Minuten-Frist, on demand), die Stats aus
+ * `nft_stats`, die Insights aus `admin_nft_insights`, das Listing aus
+ * `marketplace_items`.
+ *
+ * Wichtig:
+ * - **Warum `nft_metadata` auch im Plattform-Pfad gelesen wird.**
+ *   `blockchainStateSync.syncNFTState` schreibt den Chain-Zustand nach
+ *   `nft_metadata`, und die Route liest ihn von dort. Die Plattform liefert
+ *   diesen Zustand nicht. Würde der Plattform-Pfad `nft_metadata` auslassen,
+ *   wäre `blockchain.isApprovedForAll` dauerhaft `false` — und
+ *   `useMarketplaceItemDetail` holt die Detailseite dann für jedes gelistete
+ *   ERC-1155 ein zweites Mal mit `refresh=true`: sechs Plattform-Aufrufe statt
+ *   drei (Advisor-Befund 8b). Gelesen wird `nft_metadata` also weiter, aber
+ *   **nicht mehr als Metadatenquelle**.
+ * - **Die Antwortform ist unverändert.** Vier Aufrufer hängen daran
+ *   (`useMarketplaceItemDetail`, `CartContext`, `CartPage`,
+ *   `UnifiedListingForm`). Der Plattform-Pfad legt eine Überlagerung in der
+ *   Form eines `nft_metadata`-Dokuments über den lokalen Stand; die
+ *   nachgelagerte Logik läuft unverändert. Neu sind ausschließlich zwei
+ *   zusätzliche Felder, `dataSource` und `staleWarning`.
+ * - **Der 404-Vertrag aus V5** (Paket A7b): Kennt die Plattform das Token nicht,
+ *   antwortet die Route mit 404 und `code: 'TOKEN_NOT_INDEXED'` samt
+ *   `refreshQueued`, `refreshJobId`, `contractAddress`, `tokenId`, `chainId`.
+ *   Das ist eine **Auskunft, kein Ausfall** — deshalb ausdrücklich kein
+ *   Rückfall auf `nft_metadata`. `refreshQueued` ist dabei bis Paket A3b immer
+ *   `false`: der Vertrag steht, die Auftragsstellung fehlt noch.
+ * - **Hier sitzt der Whitelist-Filter** (V33), nicht im Lesepfad. Außerhalb der
+ *   Diamond-Whitelist darf kein Refresh entstehen, sonst zieht ein
+ *   Seitenaufruf eine fremde Collection ins Indexing. Ein lesender Abruf
+ *   registriert nichts und braucht den Filter deshalb nicht.
  */
 
 import { NextRequest } from 'next/server';
-import { apiHandler, apiSuccess, getQueryParam, BadRequestError } from '@/lib/api';
+import { apiHandler, apiSuccess, getQueryParam, BadRequestError, NotFoundError } from '@/lib/api';
 import { getCollection } from '@/lib/mongodb';
+import { isPlatformConfigured } from '@/lib/nft-data-platform/config';
+import { buildTokenDetailOverlay } from '@/lib/nft-data-platform/mappers/token-detail';
+import { getCollectionDetail, getTokenDetail, getTokenOwners } from '@/lib/nft-data-platform/read';
+import { buildTokenNotIndexedPayload, PLATFORM_RESPONSE_CODES, translatePlatformError } from '@/lib/nft-data-platform/view-state';
+import { isCollectionWhitelisted } from '@/services/blockchain/collection-whitelist';
+import type { TokenDetailOverlay } from '@/lib/nft-data-platform/mappers/token-detail';
+import { getChainConfig } from '@/services/blockchain/rpc-config';
 import { blockchainStateSync } from '@/services/nft-sync/blockchain-state-sync';
 import { ipfsMetadataLazySync } from '@/services/nft-sync/ipfs-metadata-lazy-sync';
 import { devLog } from '@/utils';
 import { buildNFTImageVariants } from '@/utils/nft/image-variants';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -79,11 +121,86 @@ export const GET = apiHandler(async (request: NextRequest) => {
         devLog.info(`   IsApprovedForAll: ${nft.blockchain.isApprovedForAll || false}`);
     }
 
+    // Step 2b: Plattform-Pfad (Paket A7a). Liegt VOR Schritt 3, weil ein
+    // erfolgreicher Plattform-Abruf das Nachladen aus IPFS erübrigt (V4).
+    let overlay: TokenDetailOverlay | null = null;
+    let dataSource: 'platform' | 'local-fallback' = 'local-fallback';
+    let staleWarning = false;
+
+    if (isPlatformConfigured()) {
+        const chainId = getChainConfig().chain.id;
+        const identity = { chainId, contractAddress: normalizedAddress, tokenId };
+
+        try {
+            // Drei Aufrufe, parallel. Die Zahl ist das Performance-Budget dieser
+            // Route (V22) und in A10 zu protokollieren — eine vierte Abfrage
+            // hier verdreifacht sich über die vier Aufrufer der Route.
+            const [token, owners, collection] = await Promise.all([
+                getTokenDetail(identity),
+                getTokenOwners(identity),
+                getCollectionDetail({ chainId, contractAddress: normalizedAddress }),
+            ]);
+
+            overlay = buildTokenDetailOverlay({ token, owners, collection });
+            dataSource = 'platform';
+        } catch (error) {
+            const failure = translatePlatformError(error);
+
+            logger[failure.logLevel](
+                {
+                    contractAddress: normalizedAddress,
+                    tokenId,
+                    code: failure.code,
+                    allowLocalFallback: failure.allowLocalFallback,
+                },
+                'nft_detail_platform_read_failed'
+            );
+
+            // V5: Die Plattform kennt das Token nicht. Das ist eine Auskunft,
+            // kein Ausfall — also kein Rückfall auf nft_metadata, sondern ein
+            // 404 mit den sechs Feldern, aus denen die Oberfläche „wird noch
+            // erfasst" machen kann.
+            if (failure.code === PLATFORM_RESPONSE_CODES.notIndexed) {
+                // V33: Außerhalb der Diamond-Whitelist darf kein Refresh
+                // entstehen, sonst zieht ein Seitenaufruf eine fremde
+                // Collection ins Indexing. Der Filter aus A4a ist genau hier
+                // nötig — nicht im Lesepfad, der nichts registriert.
+                const isWhitelisted = await isCollectionWhitelisted(normalizedAddress);
+
+                throw new NotFoundError(
+                    'Dieses NFT ist noch nicht erfasst.',
+                    buildTokenNotIndexedPayload({
+                        contractAddress: normalizedAddress,
+                        tokenId,
+                        chainId,
+                        isWhitelisted,
+                        // Kein Auftrag: queueTokenRefresh gehört zu A3b, die
+                        // Kopplung an Ereignisse zu A4b. Bis dahin ist
+                        // refreshQueued immer false — der Vertrag steht, die
+                        // Auftragsstellung fehlt noch.
+                        refreshJobId: null,
+                    }),
+                    PLATFORM_RESPONSE_CODES.notIndexed
+                );
+            }
+
+            if (!failure.allowLocalFallback) {
+                // Kein Rückfall: wir wissen nicht, was wir bekommen haben. Eine
+                // lokale Antwort würde den Fehler in gültig aussehende Daten
+                // verwandeln.
+                throw error;
+            }
+
+            // Rückfall auf den lokalen Stand, sichtbar gekennzeichnet (V32).
+            staleWarning = true;
+        }
+    }
+
     // Step 3: Lazy-load or refresh IPFS metadata when missing/legacy
-    const metadataFetchVersion = typeof (nft as any)?.metadataFetchVersion === 'number'
-        ? (nft as any).metadataFetchVersion
-        : 0;
-    const needsMetadataRefresh = !nft?.metadata?.name || metadataFetchVersion < REQUIRED_METADATA_FETCH_VERSION;
+    const localFetchVersion = typeof nft?.metadataFetchVersion === 'number' ? nft.metadataFetchVersion : 0;
+    const metadataFetchVersion = overlay !== null ? overlay.metadataFetchVersion : localFetchVersion;
+    const needsMetadataRefresh = overlay === null
+        && (!nft?.metadata?.name || metadataFetchVersion < REQUIRED_METADATA_FETCH_VERSION);
 
     if (needsMetadataRefresh) {
         devLog.info(`📡 [NFT Detail] IPFS metadata missing, lazy-loading...`);
@@ -137,9 +254,15 @@ export const GET = apiHandler(async (request: NextRequest) => {
     });
 
     // Prepare response
-    const metadataImageSource = nft?.metadata?.imageOriginal || nft?.metadata?.image || '';
-    const computedVariants = metadataImageSource ? buildNFTImageVariants(metadataImageSource) : {};
-    const ownershipBalances = nft?.ownershipBalances && typeof nft.ownershipBalances === 'object'
+    // Im Plattform-Pfad kommen Bildvarianten fertig aus dem media-Block (V31);
+    // buildNFTImageVariants bleibt für den Rückfallpfad nötig (V32, Abbau in R3).
+    const metadataImageSource = overlay !== null
+        ? overlay.metadata.imageOriginal ?? overlay.metadata.image
+        : nft?.metadata?.imageOriginal || nft?.metadata?.image || '';
+    const computedVariants = overlay !== null
+        ? overlay.metadata.images
+        : metadataImageSource ? buildNFTImageVariants(metadataImageSource) : {};
+    const localOwnershipBalances = nft?.ownershipBalances && typeof nft.ownershipBalances === 'object'
         ? Object.entries(nft.ownershipBalances as Record<string, unknown>)
             .reduce<Record<string, number>>((acc, [address, value]) => {
                 const parsed = typeof value === 'number'
@@ -155,10 +278,16 @@ export const GET = apiHandler(async (request: NextRequest) => {
                 return acc;
             }, {})
         : {};
+    const ownershipBalances = overlay !== null ? overlay.ownershipBalances : localOwnershipBalances;
 
-    const tokenStandard = nft?.contract?.contractType || listing?.tokenStandard || null;
+    const tokenStandard = overlay !== null
+        ? overlay.contract.contractType
+        : nft?.contract?.contractType || listing?.tokenStandard || null;
     const effectiveOwnershipBalances = { ...ownershipBalances };
-    const contractOwner = typeof nft?.contract?.owner === 'string' ? nft.contract.owner.toLowerCase() : null;
+    const overlayOwner = overlay?.contract.owner ?? null;
+    const contractOwner = overlayOwner !== null
+        ? overlayOwner.toLowerCase()
+        : typeof nft?.contract?.owner === 'string' ? nft.contract.owner.toLowerCase() : null;
 
     if (tokenStandard === 'ERC1155') {
         const contractOwnerBalance = typeof nft?.contract?.ownerBalance === 'number' && Number.isFinite(nft.contract.ownerBalance)
@@ -212,7 +341,7 @@ export const GET = apiHandler(async (request: NextRequest) => {
     const metadataAnimationUrl = typeof (nft?.metadata as any)?.animationUrl === 'string'
         ? (nft?.metadata as any)?.animationUrl
         : (typeof (nft?.metadata as any)?.animation_url === 'string' ? (nft?.metadata as any)?.animation_url : null);
-    const resolvedMetadata = nft?.metadata ? {
+    const resolvedMetadata = overlay !== null ? overlay.metadata : nft?.metadata ? {
         ...nft.metadata,
         imageOriginal: nft.metadata.imageOriginal || metadataImageSource || null,
         images: nft.metadata.images || computedVariants,
@@ -247,7 +376,7 @@ export const GET = apiHandler(async (request: NextRequest) => {
         metadata: resolvedMetadata,
 
         // Contract info
-        contract: nft?.contract || {
+        contract: overlay !== null ? { ...overlay.contract } : nft?.contract || {
             name: null,
             symbol: null,
             address: contractAddress,
@@ -354,7 +483,12 @@ export const GET = apiHandler(async (request: NextRequest) => {
 
         // Metadata
         cached: !blockchainStale,
-        loadTime: Date.now() - startTime
+        loadTime: Date.now() - startTime,
+
+        // Quellenkennzeichnung (A7a, V32). Neue Felder, keine geaenderten —
+        // die vier Aufrufer der Route sehen sonst eine andere Form.
+        dataSource,
+        staleWarning
     };
 
     // Normalize contract ownerBalance for UI to the selected owner in ERC1155 mode.

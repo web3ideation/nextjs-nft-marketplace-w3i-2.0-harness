@@ -38,8 +38,16 @@ export class ForbiddenError extends ApiError {
 }
 
 export class NotFoundError extends ApiError {
-    constructor(message: string = 'Not Found') {
-        super(message, 404, 'NOT_FOUND');
+    /**
+     * @param message - Meldung für den Nutzer
+     * @param details - zusätzliche Felder, die in der Antwort als `metadata`
+     *   erscheinen. Gebraucht für V5: ein nicht indiziertes Token antwortet mit
+     *   404 und trägt `code: 'TOKEN_NOT_INDEXED'`, `refreshQueued`,
+     *   `refreshJobId`, `contractAddress`, `tokenId`, `chainId`.
+     * @param code - überschreibt den Standardcode `NOT_FOUND`
+     */
+    constructor(message: string = 'Not Found', details?: unknown, code: string = 'NOT_FOUND') {
+        super(message, 404, code, details);
         this.name = 'NotFoundError';
     }
 }

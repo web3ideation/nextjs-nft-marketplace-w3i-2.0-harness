@@ -68,6 +68,20 @@ This document explains all environment variables used in the NFT Marketplace app
 - **Required:** No (fallback to in-memory when unset)
 - **Format:** `redis://...` or `rediss://...`
 - **Example:** `rediss://default:password@your-redis-host:6379`
+
+#### `REDIS_SSE_CHANNEL` (Server-Side)
+
+- **Purpose:** Redis-Pub/Sub-Kanal, über den die Instanzen ihre SSE-Ereignisse
+  austauschen (`src/services/sse/broadcast.ts`).
+- **Type:** Config
+- **Required:** **Yes, je Umgebung explizit** (V64). Es gibt **keinen**
+  Rückfallwert mehr. Begründung: teilen zwei Umgebungen eine Redis-Instanz,
+  würde ein gemeinsamer Standardkanal die Ereignisse der einen still in die
+  andere tragen — ein Fehler, der sich nicht als Fehler zeigt, sondern als
+  unerklärliche Aktualisierung in der falschen Umgebung.
+- **Format:** freier Kanalname, der die Umgebung benennt
+- **Example:** `marketplace:alpha:sse:events`
+- **Runtime or Build:** Runtime
 - **Notes:**
    - Strongly recommended for multi-instance deployments
    - Enables cross-instance cache hits and global API throttling
@@ -352,6 +366,77 @@ This document explains all environment variables used in the NFT Marketplace app
 - **Options:** `true`, `false`
 - **Default:** `false`
 - **Usage:** Beta testing, emergency lockdown
+
+---
+
+### 8️⃣b NFT Data Platform (Paket A1/A2)
+
+Alle Variablen dieses Abschnitts sind **ausschließlich serverseitig**. Keine davon
+darf ein `NEXT_PUBLIC_`-Gegenstück bekommen (V14): Secret und Signatur gehören
+nie in den Browser-Bundle. `scripts/check-env.js` meldet einen solchen Spiegel
+als Fehler.
+
+Gelesen werden sie an genau einer Stelle: `src/lib/nft-data-platform/config.ts`.
+Dort liegt auch der **verbindliche** Nachweis für V14 — die Funktion
+`getPlatformConfig()` läuft im echten Prozess, wirft beim ersten Aufruf und nennt
+alle fehlenden Namen auf einmal. `npm run env:check` prüft dagegen eine Datei und
+belegt in einer Umgebung, in der der Hoster die Variablen injiziert, nichts
+(Entscheidung E4, `state/plan-v2-plattform-integration.md` Abschnitt 6).
+
+#### `NFT_DATA_PLATFORM_ENABLED` (Server-Side)
+
+- **Purpose:** Schaltet den Datenbezug über die NFT Data Platform ein. Ist das
+  Flag aus, erzeugt kein Pfad einen Plattform-Aufruf und keine der Variablen
+  unten ist Pflicht.
+- **Type:** Flag
+- **Required:** No (ohne Angabe gilt: aus)
+- **Format:** **Streng** — nur `true` oder `1` gelten als an. `TRUE`, `yes`,
+  `on`, Leerstring oder ein Tippfehler gelten als **aus**. Begründung: ein Flag,
+  das bei Tippfehlern „an" bedeutet, stellt eine Datenquelle scharf, die niemand
+  scharf stellen wollte.
+- **Example:** `true`
+- **Runtime or Build:** Runtime
+
+#### Pflichtvariablen, wenn das Flag an ist
+
+| Name | Purpose | Type | Example |
+|---|---|---|---|
+| `NFT_API_BASE_URL` | Basis-URL der Plattform, ohne Pfad | URL | `https://nft-api.example.test` |
+| `NFT_API_READ_CLIENT_ID` | Client-ID des Lese-Clients (`alpha-read`) | ID | `alpha-read` |
+| `NFT_API_READ_KEY` | API-Key des Lese-Clients | Secret | `<READ_KEY>` |
+| `NFT_API_READ_SECRET` | HMAC-Secret des Lese-Clients | Secret | `<READ_SECRET>` |
+| `NFT_API_OPS_CLIENT_ID` | Client-ID des Ops-Clients (`alpha-ops`) | ID | `alpha-ops` |
+| `NFT_API_OPS_KEY` | API-Key des Ops-Clients | Secret | `<OPS_KEY>` |
+| `NFT_API_OPS_SECRET` | HMAC-Secret des Ops-Clients | Secret | `<OPS_SECRET>` |
+
+Zwei Zugangsdatensätze, nicht einer (Entscheidung 14 der Spec, V15): Lesen,
+Discover und Token-Refresh laufen über **read** mit 600 Anfragen pro Minute, die
+Collection-Registrierung über **ops** mit 30. Die Zugangsdaten werden **je
+Umgebung** vergeben; die der Alpha gelten nicht für die Produktion. Der
+Bootstrap-Client der Plattform wird nie benutzt.
+
+#### Optionale Stellwerte
+
+Alle haben einen Standardwert im Code. Sie existieren, damit die Messung aus V34
+die Startwerte korrigieren kann, **ohne** dass Code geändert werden muss.
+
+| Name | Purpose | Default |
+|---|---|---|
+| `NFT_API_TIMEOUT_MS` | Timeout je Anfrage | `10000` |
+| `NFT_API_MAX_ATTEMPTS` | Versuche je Anfrage, Wiederholungen eingeschlossen | `3` |
+| `NFT_API_READ_LIMIT_PER_MINUTE` | Fensterlimit des Lese-Clients | `600` |
+| `NFT_API_READ_CONCURRENCY` | gleichzeitige Anfragen des Lese-Clients | `8` |
+| `NFT_API_OPS_LIMIT_PER_MINUTE` | Fensterlimit des Ops-Clients | `30` |
+| `NFT_API_OPS_CONCURRENCY` | gleichzeitige Anfragen des Ops-Clients | `2` |
+
+**Warum der Deckel bei 8 liegt:** 600 Anfragen pro Minute sind 10 pro Sekunde.
+Bei 8 gleichzeitigen müsste jede unter 800 ms liegen, um das Fenster zu füllen —
+der Deckel bremst also erst, wenn die Plattform ohnehin langsamer ist als das
+Limit erlaubt. **Achtung bei mehreren Prozessen:** Budget und Deckel liegen im
+Prozess, das Limit gilt je Client über alle Instanzen. Web und Worker zählen
+getrennt, erlauben sich also zusammen das Doppelte. Geführt in
+`state/assumption-ledger.md` (13.10.2026); erkennbar an `sentInWindow` im
+Protokoll neben `remaining`.
 
 ---
 

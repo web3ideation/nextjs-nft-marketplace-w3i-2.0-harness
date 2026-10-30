@@ -106,3 +106,56 @@ ohnehin anfasst — dann fällt der Sammelbump mit einer Bewegung zusammen, die
 ohnehin geprüft werden muss. Vorbedingung für Option 1 in beiden Fällen: eine
 E2E-Abdeckung des Kaufpfads, und der Coverage-Provider wird im selben Schritt
 wie `vitest` angehoben.
+
+---
+
+## Nachtrag, 29.10.2026 — die Revisionsbedingung ist eingetreten
+
+`[Fakt]` Der CI-Lauf von PR #8 (Job 123036704469) meldete im Produktionsbaum
+**zwei kritische Befunde**: `@sentry/nextjs` (Middleware-Bypass bei Nutzung der
+Tunnel-Route, GHSA-mchm-gjx6-7h55) und `next` mit vier Advisories, darunter eine
+unauthentifizierte Remote-Code-Ausführung in der Image-Optimization-API
+(GHSA-2464-fhr4-w9xw) sowie zwei Cache-Poisoning-Befunde, die **ausdrücklich
+selbst gehostete Anwendungen** nennen (GHSA-4jqv-mc3x-m676,
+GHSA-mcj8-r9mp-w47p). Damit ist die erste Revisionsbedingung dieser ADR erfüllt,
+wörtlich: „ein Befund im Produktionsbaum (`--omit=dev`) erreicht den Rang
+`critical`".
+
+`[Fakt]` Die Lage hat sich **ohne Änderung am Lockfile** verschoben. Am
+15.10.2026 ergab dieselbe Messung 54 Befunde mit 14 high und keinem kritischen;
+am 28.10.2026 waren es 67 mit 26 high und 2 critical. Die Advisory-Datenbank ist
+weitergelaufen, nicht der Abhängigkeitsbaum.
+
+**Was getan wurde — und was ausdrücklich nicht.** `[Fakt]` Behoben durch zwei
+**gezielte** Aktualisierungen: `next` von 15.5.25 auf 15.5.28 und
+`@sentry/nextjs` von 10.43.0 auf 10.75.2. Beide Ziele liegen **innerhalb** der
+schon deklarierten Bereiche `^15.5.25` und `^10.43.0`; es war also eine
+Lockfile-Aktualisierung, kein Versionssprung und keine Migration.
+`[Fakt]` **Nicht** ausgeführt wurde `npm audit fix --force`, das `wagmi@3.7.9`
+als Breaking Change und `next` auf 16.x gehoben hätte. `[Fakt]` **Nicht**
+geändert wurde der Schwellwert des Gates; `critical` bleibt die Grenze.
+
+`[Schlussfolgerung]` Die Option-1-Vorbedingung dieser ADR — eine E2E-Abdeckung
+des Kaufpfads vor einem Sammelbump — war hier nicht einschlägig, weil kein
+Sammelbump stattfand. Sie gilt unverändert für den noch offenen Rest.
+
+**Eine Fehldiagnose auf dem Weg, als Warnung festgehalten.** `[Fakt]`
+`npm audit` fasst die betroffenen Bereiche über alle Advisories eines Pakets
+zusammen und meldete für `next` den Bereich `9.3.4-canary.0 - 16.3.0-preview.10`;
+`npm view next version` nennt zusätzlich die global neueste Version (16.4.3).
+Aus beidem zusammen entstand zunächst die Diagnose „der Fix verlangt einen
+Major-Sprung auf 16". `[Fakt]` Pro Advisory betrachtet ist die höchste
+verwundbare Version `15.5.27`, behoben also in `15.5.28`.
+`[Schlussfolgerung]` Die zusammengefasste Bereichsangabe von `npm audit` ist
+kein Hinweis darauf, welcher Sprung nötig ist. Wer sie so liest, plant eine
+Migration, wo eine Patch-Version genügt. Die verwertbare Angabe steht je
+Advisory in `via[].range` der JSON-Ausgabe.
+
+**Was offen bleibt:** `[Fakt]` 53 Befunde im Produktionsbaum, davon **25 high**
+und keiner kritisch. Die Zurückstellung dieser ADR beruhte auf **14** high; die
+Zahl hat sich seither fast verdoppelt, ohne Zutun. Der prominenteste Befund ist
+`sharp` mit geerbten libvips-CVEs (GHSA-f88m-g3jw-g9cj) — also genau der Pfad,
+der die Bildoptimierung auf dem VPS fährt. `[Schlussfolgerung]` Die zweite
+Revisionsbedingung („die Datenquellen-Migration fasst den Abhängigkeitsbaum
+ohnehin an") ist weiterhin der vorgesehene Anlass für den Sammelbump. Dieser
+Nachtrag erledigt die kritischen Befunde, nicht die Zurückstellung.
