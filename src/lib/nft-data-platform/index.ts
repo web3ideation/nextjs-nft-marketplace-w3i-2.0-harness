@@ -89,3 +89,22 @@ export type {
     TokenNotIndexedPayload,
     ViewDataState,
 } from '@/lib/nft-data-platform/view-state';
+
+export {
+    DISCOVER_BATCH_LIMIT,
+    discoverTokens,
+    discoverWalletHoldings,
+    getWalletInventory,
+    queueCollectionRefresh,
+    queueTokenRefresh,
+} from '@/lib/nft-data-platform/write';
+export type { TokenIdentityInput } from '@/lib/nft-data-platform/write';
+
+export type {
+    PlatformDiscoverItem,
+    PlatformDiscoverResponse,
+    PlatformDiscoveryStatus,
+    PlatformRefreshJobResponse,
+    PlatformWalletInventoryItem,
+    PlatformWalletInventoryResponse,
+} from '@/lib/nft-data-platform/types';

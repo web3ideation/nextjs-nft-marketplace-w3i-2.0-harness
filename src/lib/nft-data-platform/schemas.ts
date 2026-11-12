@@ -24,7 +24,20 @@
  *   nicht um — wer ein `Date` braucht, baut es am Verwendungsort.
  * - **`metadataPayload` wird nicht durchgeprüft.** Das sind beliebige
  *   NFT-Metadaten; ein Schema darüber scheitert am ersten ungewöhnlichen NFT.
- * - Erhoben gegen Plattform-`main` (Prüfstand E5, derzeit `5df7493`):
+ * - **Das Nutzobjekt heißt `item`, die Liste heißt `items`.** Die beiden
+ *   Einzelobjekt-Endpunkte (Token-Detail, Collection-Detail) legen ihr Objekt
+ *   als `item` bei, nicht als `token` beziehungsweise `collection`. Am
+ *   30.10.2026 korrigiert: die Schemata hießen es `token` und `collection`, und
+ *   **die eigenen Attrappen folgten dem Schema statt der Plattform** — beide
+ *   Seiten grün, beide falsch. Sichtbar geworden wäre es erst beim ersten
+ *   echten Lauf, als 502 ohne Rückfall. Wer hier ein Feld benennt, liest es im
+ *   Plattform-Code nach, nicht im Migrationsdokument.
+ * - **Nicht jede Collection in einer Antwort ist dieselbe Collection.** Das
+ *   Wallet-Inventar legt eine eigene, kürzere Zusammenfassung bei
+ *   (`walletCollectionSummarySchema`). Ein geteiltes Schema für beide wäre
+ *   bequem und falsch.
+ * - Erhoben gegen Plattform-`main` (Prüfstand E5); Hüllen und Teilformen am
+ *   30.10.2026 gegen `2812315` nachgelesen. Zuvor erhoben gegen `5df7493`:
  *   `packages/db/src/index.ts` (Dokumenttypen), `apps/web/src/lib/token-response.ts`
  *   und `collection-response.ts` (Anreicherung), die Routen unter
  *   `apps/web/src/app/api/v1/`.
@@ -216,8 +229,23 @@ function successEnvelope<T extends z.ZodRawShape>(payload: T) {
     return z.object({ ok: z.literal(true), ...payload });
 }
 
-/** `GET /api/v1/tokens/:chainId/:contract/:tokenId` */
-export const tokenDetailResponseSchema = successEnvelope({ token: platformTokenSchema });
+/**
+ * `GET /api/v1/tokens/:chainId/:contract/:tokenId`
+ *
+ * **Das Token steht in `item`, nicht in `token`.** [Fakt] Die Plattform
+ * antwortet `{ ok, lookup, requestedIdentity, collection, freshness, item }`
+ * (`apps/web/src/app/api/v1/tokens/[chainId]/[contractAddress]/[tokenId]/route.ts`).
+ * Beide Einzelobjekt-Endpunkte heißen ihr Nutzobjekt `item`; nur die
+ * Listenendpunkte heißen es `items`. Ein Schema auf `token` wird hier **jede**
+ * Antwort abweisen, und zwar als 502 ohne Rückfall — also sichtbar erst beim
+ * ersten echten Lauf, nicht im Gate.
+ *
+ * **Nebenbefund, nicht hier umgesetzt:** die Antwort trägt die vollständige
+ * `collection` mit. Die Detailroute holt sie heute mit einem dritten Aufruf
+ * eigens (`getCollectionDetail`) — das wäre ein Aufruf weniger je Seitenaufruf
+ * (V22). Gehört zu A7a, nicht in eine Schema-Korrektur.
+ */
+export const tokenDetailResponseSchema = successEnvelope({ item: platformTokenSchema });
 
 /**
  * `GET /api/v1/owners/:chainId/:contract/:tokenId`
@@ -247,9 +275,16 @@ export const collectionListResponseSchema = successEnvelope({
     pageInfo: pageInfoSchema,
 });
 
-/** `GET /api/v1/collections/:chainId/:contract` */
+/**
+ * `GET /api/v1/collections/:chainId/:contract`
+ *
+ * **Die Collection steht in `item`, nicht in `collection`** — dieselbe Regel
+ * wie beim Token oben, belegt an
+ * `apps/web/src/app/api/v1/collections/[chainId]/[contractAddress]/route.ts`:
+ * `{ ok, lookup, requestedIdentity, item }`.
+ */
 export const collectionDetailResponseSchema = successEnvelope({
-    collection: platformCollectionSchema,
+    item: platformCollectionSchema,
 });
 
 /**
@@ -284,3 +319,140 @@ export const searchResponseSchema = z.union([
         pageInfo: pageInfoSchema,
     }),
 ]);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Paket A3b — Wallet-Inventar, Discover, Refresh
+//
+// Alle Formen unten sind am Prüfstand (Plattform-`main`) erhoben, nicht aus dem
+// Migrationsdokument. Dieselbe Pick-Regel wie oben: zusätzliche Felder fallen
+// weg, ein fehlendes gebrauchtes Feld bricht laut.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Die Collection, wie sie **im Wallet-Inventar** beiliegt.
+ *
+ * [Fakt] Das Inventar legt nicht die vollständige Collection bei, sondern eine
+ * eigene, kürzere Zusammenfassung: `buildWalletCollectionSummary`
+ * (`apps/web/src/lib/owner-inventory.ts`) baut ein Objekt **ohne**
+ * `totalSupply`, `holderCount`, `coverImageSource`, `recentTokens`, `preview`
+ * und `createdAt`.
+ *
+ * [Schlussfolgerung] `platformCollectionSchema` ist hier das falsche Schema: es
+ * verlangt genau diese Felder, und jede Inventar-Zeile **mit** indizierter
+ * Collection würde abgewiesen — während die Zeilen ohne Collection
+ * durchkommen. Ein Fehlerbild, das mit zunehmender Indizierung schlimmer wird,
+ * statt sich zu zeigen, solange nichts indiziert ist.
+ *
+ * Aufgeführt sind nur die Felder, die der Marktplatz braucht; die übrigen
+ * fallen nach der Pick-Regel weg.
+ */
+export const walletCollectionSummarySchema = z.object({
+    _id: platformId,
+    chainId: z.number().int(),
+    contractAddress: z.string().min(1),
+    standard: z.string().min(1),
+    name: z.string().nullable(),
+    symbol: z.string().nullable(),
+    imageOriginalUrl: z.string().nullable(),
+    indexedTokenCount: z.number().int(),
+    syncStatus: z.string().min(1),
+    updatedAt: isoTimestamp,
+});
+
+/**
+ * Ein Element des Wallet-Inventars.
+ *
+ * Unterschieden nach `standard` — und zwar in der **kleinen** Schreibweise der
+ * Plattform (siehe `PLATFORM_STANDARD`). Bei ERC-1155 trägt die Zeile ein
+ * `balance`, bei ERC-721 nicht.
+ *
+ * `token` und `collection` sind **nullbar**, und das ist der wichtige Teil:
+ * V2 verlangt, dass eine Holding-Zeile ohne indiziertes Token trotzdem einen
+ * Eintrag ergibt — mit Contract-Adresse und Token-ID. Ein Schema, das `token`
+ * verlangt, würde genau die Token verschlucken, die noch auf das Indexing
+ * warten.
+ */
+export const walletInventoryItemSchema = z.union([
+    z.object({
+        standard: z.literal(PLATFORM_STANDARD.erc721),
+        chainId: z.number().int(),
+        contractAddress: z.string().min(1),
+        tokenId: z.string().min(1),
+        ownerAddress: z.string().min(1),
+        updatedAt: isoTimestamp,
+        token: platformTokenSchema.nullable(),
+        collection: walletCollectionSummarySchema.nullable(),
+    }),
+    z.object({
+        standard: z.literal(PLATFORM_STANDARD.erc1155),
+        chainId: z.number().int(),
+        contractAddress: z.string().min(1),
+        tokenId: z.string().min(1),
+        ownerAddress: z.string().min(1),
+        balance: z.string().min(1),
+        updatedAt: isoTimestamp,
+        token: platformTokenSchema.nullable(),
+        collection: walletCollectionSummarySchema.nullable(),
+    }),
+]);
+
+/** `GET /api/v1/owners/wallets/{ownerAddress}?chainIds=…` */
+export const walletInventoryResponseSchema = successEnvelope({
+    chainIds: z.array(z.number().int()),
+    items: z.array(walletInventoryItemSchema),
+    pageInfo: pageInfoSchema,
+});
+
+/**
+ * Zustand einer Identität in der Discover-Antwort.
+ *
+ * `ready` heißt: schon indiziert, `token` und `collection` liegen bei.
+ * `queued` heißt: Auftrag angelegt, `jobId` und `queuedJobId` gesetzt.
+ * `failed` heißt: die Plattform hat abgelehnt, `message` nennt den Grund — das
+ * ist ihre eigene Env-Allowlist als Notbremse, nicht unser Whitelist-Filter.
+ */
+export const discoveryStatusSchema = z.enum(['ready', 'queued', 'failed']);
+
+/**
+ * Ein Element der Discover-Antwort.
+ *
+ * **Die Antwort ist keine Quittung, sondern teilweise schon das Ergebnis:** bei
+ * `ready` liegen Token und Collection vollständig bei. Ein Aufrufer kann daraus
+ * unmittelbar anzeigen, was schon da ist, und braucht keinen zweiten Aufruf.
+ */
+export const discoverItemSchema = z.object({
+    chainId: z.number().int(),
+    contractAddress: z.string().min(1),
+    tokenId: z.string().min(1),
+    discoveryStatus: discoveryStatusSchema,
+    queuedJobId: z.string().min(1).nullable(),
+    jobId: z.string().min(1).nullable(),
+    token: platformTokenSchema.nullable(),
+    collection: platformCollectionSchema.nullable(),
+    message: z.string().min(1).optional(),
+});
+
+/** `POST /api/v1/tokens/discover` und `POST /api/v1/owners/wallets/discover` */
+export const discoverResponseSchema = successEnvelope({
+    summary: z.object({
+        total: z.number().int(),
+        ready: z.number().int(),
+        queued: z.number().int(),
+        failed: z.number().int(),
+    }),
+    items: z.array(discoverItemSchema),
+});
+
+/**
+ * `POST /api/v1/refresh/token` und `POST /api/v1/refresh/collection`.
+ *
+ * Die Plattform antwortet mit **wechselndem** HTTP-Status
+ * (`persistedJob.statusCode`). Solange er im 2xx-Bereich liegt, sieht unser
+ * Client ihn als Erfolg; ein Status außerhalb käme als `PlatformResponseError`
+ * an und wäre dann in `write.ts` zu behandeln, nicht beim Aufrufer.
+ */
+export const refreshJobResponseSchema = successEnvelope({
+    jobId: z.string().min(1),
+    queueJobId: z.string().min(1).nullable(),
+    status: z.string().min(1),
+});

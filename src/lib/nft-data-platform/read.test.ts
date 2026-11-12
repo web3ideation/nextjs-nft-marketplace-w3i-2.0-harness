@@ -158,7 +158,7 @@ beforeEach(() => {
 
 describe('getTokenDetail', () => {
     it('ruft den Token-Pfad und gibt das geprüfte Token zurück', async () => {
-        const { paths, clientIds, deps } = harness([{ ok: true, token: makeToken('7') }]);
+        const { paths, clientIds, deps } = harness([{ ok: true, item: makeToken('7') }]);
 
         const token = await getTokenDetail(
             { chainId: 11155111, contractAddress: '0xabc', tokenId: '7' },
@@ -174,7 +174,7 @@ describe('getTokenDetail', () => {
     it('meldet einen Formfehler als PlatformResponseError, nicht als zod-Fehler', async () => {
         const kaputt = makeToken('7');
         delete kaputt.media;
-        const { deps } = harness([{ ok: true, token: kaputt }]);
+        const { deps } = harness([{ ok: true, item: kaputt }]);
 
         await expect(
             getTokenDetail({ chainId: 11155111, contractAddress: '0xabc', tokenId: '7' }, deps)
@@ -184,7 +184,7 @@ describe('getTokenDetail', () => {
     it('nennt die Fundstelle in der Meldung, statt nur "falsche Form"', async () => {
         const kaputt = makeToken('7');
         delete kaputt.media;
-        const { deps } = harness([{ ok: true, token: kaputt }]);
+        const { deps } = harness([{ ok: true, item: kaputt }]);
 
         await expect(
             getTokenDetail({ chainId: 11155111, contractAddress: '0xabc', tokenId: '7' }, deps)
@@ -304,7 +304,7 @@ describe('listCollections — Paginierung (Pflichttest)', () => {
 
 describe('getCollectionDetail', () => {
     it('ruft den Collection-Pfad und gibt die geprüfte Collection zurück', async () => {
-        const { paths, deps } = harness([{ ok: true, collection: makeCollection('0xabc') }]);
+        const { paths, deps } = harness([{ ok: true, item: makeCollection('0xabc') }]);
 
         const collection = await getCollectionDetail({ chainId: 11155111, contractAddress: '0xabc' }, deps);
 
@@ -368,8 +368,8 @@ describe('searchEntities', () => {
 describe('Alle Lesemethoden nutzen den Read-Zugangsdatensatz (V15)', () => {
     it('sendet nie den Ops-Client', async () => {
         const { clientIds, deps } = harness([
-            { ok: true, token: makeToken('7') },
-            { ok: true, collection: makeCollection('0xabc') },
+            { ok: true, item: makeToken('7') },
+            { ok: true, item: makeCollection('0xabc') },
             { ok: true, items: [], pageInfo: { limit: 50, hasMore: false, nextCursor: null } },
         ]);
 
