@@ -1,15 +1,78 @@
+/**
+ * Datei: src/app/api/collections/route.ts
+ *
+ * Zweck: GET /api/collections — die Datengrundlage der Collections-Übersicht.
+ *
+ * Datenstrategie, zwei Pfade seit Paket A9:
+ *
+ * **Plattform-Pfad** (`isPlatformConfigured()` wahr): Name, Symbol,
+ * Vorschaubilder und Umfang kommen aus der NFT Data Platform (V7). Alles
+ * andere bleibt, wo es war — welche Contracts angezeigt werden, Preise und
+ * Stückzahlen aus `marketplace_items`, soziale Zahlen aus `nft_stats`,
+ * Kategorie und Rarität aus `admin_nft_insights`. Für diese drei hat die
+ * Plattform kein Gegenstück.
+ *
+ * **Rückfallpfad** (Flag aus, Variable fehlt, oder Plattform nicht
+ * ansprechbar): die bisherige `nft_metadata`-Aggregation. Die Antwort trägt
+ * dann `dataSource: 'local-fallback'` und `staleWarning: true` (V32).
+ *
+ * Wichtig:
+ * - **Ein Plattform-Aufruf je Seitenaufruf, nicht einer je Collection.**
+ *   `[Fakt]` Die Listenroute der Plattform ruft `serializeEnrichedCollections`
+ *   — dieselbe Funktion, die auch die Detailroute benutzt
+ *   (`apps/web/src/lib/collection-response.ts`, Zeilen 12 und 22, Stand
+ *   `2812315`). Die Listenantwort trägt pro Element also schon `preview`,
+ *   `recentTokens`, `indexedTokenCount` und `holderCount`. Ein Aufruf mit
+ *   `limit=200` liefert die Metadaten für bis zu 200 Collections; ein
+ *   Detailaufruf je Contract wäre genau die Aufrufzahl, die hier nicht
+ *   entstehen darf.
+ * - **Die Listenroute der Plattform filtert nicht.** Sie nimmt nur `limit` und
+ *   `cursor`, keinen Contract- und keinen Chain-Filter
+ *   (`collectionListQuerySchema`). Gefiltert wird deshalb hier: welche
+ *   Contracts angezeigt werden, kommt weiter aus den aktiven Listings, und die
+ *   Plattformliste wird lokal dagegen abgeglichen.
+ * - **Ein Formfehler nimmt hier nicht die Ansicht.** Anders als die
+ *   Detailseite zeigt die Übersicht viele Collections, und V32 nennt sie
+ *   ausdrücklich als „bleibt nutzbar". Deshalb führt auch
+ *   `allowLocalFallback: false` nicht zum Werfen, sondern zu lokalen Werten mit
+ *   `staleWarning`. Die Protokollstufe kommt trotzdem aus der Übersetzung — der
+ *   Betrieb sieht den Formfehler, der Besucher sieht eine Ansicht.
+ * - **Die `nft_metadata`-Blöcke bleiben vollständig stehen.** Sie sind ab jetzt
+ *   der Rückfallweg; entfernt werden sie im Abbauplan (R3), nicht hier.
+ * - Die Route arbeitet durchgehend mit `any` und ist Altbestand nach der
+ *   Geltungsgrenze in `CLAUDE.md`. Paket A9 fügt kein neues `any` hinzu und
+ *   räumt das bestehende nicht auf.
+ */
+
 import { NextRequest } from 'next/server';
 import { apiHandler, apiSuccess, getQueryParam } from '@/lib/api';
 import { getCollection } from '@/lib/mongodb';
 import { isNativeETH, ZERO_ADDRESS } from '@/config/tokens';
+import { logger } from '@/lib/logger';
+import { PLATFORM_MAX_LIMIT, asPlatformCursor } from '@/lib/nft-data-platform/cursor';
+import { isPlatformConfigured } from '@/lib/nft-data-platform/config';
+import { buildCollectionOverlayMap } from '@/lib/nft-data-platform/mappers/collection-list';
+import { listCollections } from '@/lib/nft-data-platform/read';
+import { translatePlatformError } from '@/lib/nft-data-platform/view-state';
 import { devLog } from '@/utils';
+import type { CollectionOverlay } from '@/lib/nft-data-platform/mappers/collection-list';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 /**
+ * Höchstzahl der Seiten, die diese Route von der Plattform holt.
+ *
+ * Zwei Seiten à 200 sind 400 Collections — für die Alpha weit jenseits des
+ * Bestands, denn die Plattform indiziert nur registrierte Collections. Der
+ * Deckel macht die Aufrufzahl beweisbar statt geschätzt: Wird er erreicht, ist
+ * das ein Protokolleintrag und kein stilles Abschneiden.
+ */
+const MAX_PLATFORM_PAGES = 2;
+
+/**
  * GET /api/collections
- * 
+ *
  * Aggregates collection statistics directly from marketplace_items
  * Includes preview images from multiple NFTs and social stats
  */
@@ -408,19 +471,85 @@ export const GET = apiHandler(async (request: NextRequest) => {
             });
         }
 
+        // Plattform-Pfad (Paket A9). Liegt NACH den lokalen Blöcken, weil diese
+        // den Rückfallweg bilden: Was die Plattform nicht liefert, bleibt
+        // lokal stehen, statt zu fehlen.
+        let platformOverlays = new Map<string, CollectionOverlay>();
+        let dataSource: 'platform' | 'local-fallback' = 'local-fallback';
+        let staleWarning = false;
+
+        if (isPlatformConfigured()) {
+            try {
+                const fetched = [];
+                let cursor = asPlatformCursor(null);
+                let pagesFetched = 0;
+
+                do {
+                    const page = await listCollections({ limit: PLATFORM_MAX_LIMIT, cursor });
+                    fetched.push(...page.items);
+                    pagesFetched += 1;
+                    cursor = page.pageInfo.hasMore ? asPlatformCursor(page.pageInfo.nextCursor) : null;
+                } while (cursor !== null && pagesFetched < MAX_PLATFORM_PAGES);
+
+                if (cursor !== null) {
+                    // Der Deckel greift. Nicht still abschneiden: Dann ist der
+                    // Bestand größer als angenommen, und A9 braucht einen
+                    // Filter auf der Plattformseite statt eines Deckels hier.
+                    logger.warn(
+                        { fetched: fetched.length, pages: pagesFetched },
+                        'collections_platform_page_cap_reached'
+                    );
+                }
+
+                platformOverlays = buildCollectionOverlayMap(fetched);
+                dataSource = 'platform';
+            } catch (error) {
+                const failure = translatePlatformError(error);
+
+                logger[failure.logLevel](
+                    { code: failure.code, allowLocalFallback: failure.allowLocalFallback },
+                    'collections_platform_read_failed'
+                );
+
+                // Auch bei allowLocalFallback: false wird hier nicht geworfen —
+                // siehe Dateikopf. Die Übersicht bleibt nutzbar (V32).
+                staleWarning = true;
+            }
+        }
+
         // Transform to API format
         const transformedCollections = collections.map((col: any) => {
             const normalizedContractAddress = String(col.contractAddress || '').toLowerCase();
-            const previewImages = metadataMap.get(normalizedContractAddress) || [];
+            const platformOverlay = platformOverlays.get(normalizedContractAddress);
+
+            // Kein Treffer in der Plattformliste: lokalen Wert stehen lassen
+            // und die Antwort als möglicherweise veraltet kennzeichnen. Ein
+            // Detailaufruf wäre hier der falsche Heilversuch — fehlt der
+            // Contract, ist die Registrierung lückenhaft, und das ist ein
+            // Befund für A10.
+            if (dataSource === 'platform' && platformOverlay === undefined) {
+                staleWarning = true;
+            }
+
+            const previewImages =
+                platformOverlay !== undefined && platformOverlay.previewImages.length > 0
+                    ? platformOverlay.previewImages
+                    : metadataMap.get(normalizedContractAddress) || [];
             const contractInfo = contractInfoMap.get(normalizedContractAddress) || {};
             const stats = statsMap.get(normalizedContractAddress) || {};
             const insights = insightsMap.get(normalizedContractAddress);
             const erc721Count = col.erc721ItemCount || 0;
             const erc1155Count = col.erc1155ItemCount || 0;
             const isPureERC1155 = erc1155Count > 0 && erc721Count === 0;
-            const supplyItems = isPureERC1155
-                ? (insights?.totalSupply || contractInfo.inferredSupplyItems || contractInfo.tokenIdCount || null)
-                : (contractInfo.contractDeclaredSupply || contractInfo.tokenIdCount || insights?.totalSupply || null);
+            // Vorrang der Plattform vor den drei lokalen Schätzwegen: Sie
+            // liefert totalSupply als materialisierten Wert, lokal wird er aus
+            // den Insights, aus contract.totalSupply oder aus der höchsten
+            // Token-ID plus eins erraten. Nennt die Plattform keinen Umfang,
+            // greifen die bisherigen Wege unverändert weiter.
+            const supplyItems = platformOverlay?.totalSupply
+                ?? (isPureERC1155
+                    ? (insights?.totalSupply || contractInfo.inferredSupplyItems || contractInfo.tokenIdCount || null)
+                    : (contractInfo.contractDeclaredSupply || contractInfo.tokenIdCount || insights?.totalSupply || null));
             const supplyUnits = isPureERC1155
                 ? (contractInfo.totalSupplyUnits || null)
                 : null;
@@ -517,8 +646,9 @@ export const GET = apiHandler(async (request: NextRequest) => {
 
             return {
                 contractAddress: normalizedContractAddress,
-                contractName: contractInfo.contractName || normalizedContractAddress.slice(0, 10) + '...',
-                contractSymbol: contractInfo.contractSymbol || 'NFT',
+                contractName:
+                    platformOverlay?.contractName || contractInfo.contractName || normalizedContractAddress.slice(0, 10) + '...',
+                contractSymbol: platformOverlay?.contractSymbol || contractInfo.contractSymbol || 'NFT',
                 itemCount: col.itemCount,
                 floorPrice: floorPriceDisplay,
                 floorPriceCurrency: floorPriceCurrencyDisplay,
@@ -543,8 +673,13 @@ export const GET = apiHandler(async (request: NextRequest) => {
                 // Supply info
                 totalSupply: supplyItems,
                 totalSupplyUnits: supplyUnits,
-                // Unique owners (sellers with listed items)
+                // Unique owners (sellers with listed items). Bleibt, was es
+                // ist — die Zahl verschiedener Verkäufer, nicht die der
+                // Halter. holderCount ist etwas anderes und kommt daneben.
                 uniqueOwners: col.uniqueSellers?.length || 0,
+                // Neu mit Paket A9, nur im Plattform-Pfad gefüllt.
+                holderCount: platformOverlay?.holderCount ?? null,
+                indexedTokenCount: platformOverlay?.indexedTokenCount ?? null,
                 insights: includeInsights ? insights : undefined
             };
         });
@@ -556,7 +691,9 @@ export const GET = apiHandler(async (request: NextRequest) => {
         const response = apiSuccess({
             collections: transformedCollections,
             count: transformedCollections.length,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            dataSource,
+            staleWarning
         });
         response.headers.set('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=45');
         return response;
