@@ -260,6 +260,51 @@ describe('getWalletInventory', () => {
         expect(second.items[0]?.tokenId).toBe('8');
     });
 
+    it('nimmt die verkuerzte Collection des Inventars an — nicht die vollstaendige', async () => {
+        // Das Inventar legt `buildWalletCollectionSummary` bei: ohne
+        // totalSupply, holderCount, coverImageSource, recentTokens, preview und
+        // createdAt. Ein Schema auf die vollstaendige Collection haette genau
+        // die Zeilen abgewiesen, deren Collection schon indiziert ist — und die
+        // ohne Collection durchgelassen. Also ein Fehlerbild, das mit
+        // fortschreitender Indizierung schlimmer wird.
+        const { deps } = harness([
+            {
+                ok: true,
+                chainIds: [11155111],
+                items: [
+                    {
+                        ...inventoryItem('7'),
+                        collection: {
+                            _id: '507f1f77bcf86cd799439012',
+                            chainId: 11155111,
+                            contractAddress: '0xabc',
+                            standard: 'erc721',
+                            name: 'Testsammlung',
+                            symbol: 'TST',
+                            description: null,
+                            externalUrl: null,
+                            imageOriginalUrl: null,
+                            bannerImageOriginalUrl: null,
+                            featuredImageOriginalUrl: null,
+                            animationOriginalUrl: null,
+                            audioOriginalUrl: null,
+                            interactiveOriginalUrl: null,
+                            indexedTokenCount: 42,
+                            syncStatus: 'idle',
+                            updatedAt: '2026-10-02T10:00:00.000Z',
+                        },
+                    },
+                ],
+                pageInfo: { nextCursor: null, hasMore: false, limit: 50 },
+            },
+        ]);
+
+        const result = await getWalletInventory({ ownerAddress: '0xowner' }, deps);
+
+        expect(result.items[0]?.collection?.name).toBe('Testsammlung');
+        expect(result.items[0]?.collection?.indexedTokenCount).toBe(42);
+    });
+
     it('nimmt Zusatzfelder an, statt an einer Erweiterung der Plattform zu brechen', async () => {
         const { deps } = harness([
             {
