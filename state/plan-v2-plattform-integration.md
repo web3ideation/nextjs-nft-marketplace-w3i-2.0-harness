@@ -593,6 +593,17 @@ A11-Vertrag ist zu belegen, dass eine Übersicht mit zwanzig Karten mit ein bis 
 Plattform-Aufrufen auskommt — die Spec behauptet das, v1 übernahm es ungeprüft, und ohne Beleg
 ist A11 der Ort, an dem das Fensterlimit zuerst reißt. Die Freitextsuche (Befund 17) gehört
 damit zu A11, nicht zu A9.
+
+> **Der Beleg ist am 13.11.2026 geführt und fällt negativ aus:
+> `state/befund-a11-aufrufzahl.md`.** `[Fakt]` Die Plattform hat auf `origin/main`
+> (`4da567a`) keinen Endpunkt, der eine gewählte Menge von Token liefert — weder die
+> Listenroute noch `listTokens` kennen einen Filter auf Token-IDs, `findTokensByIds` nimmt
+> MongoDB-ObjectIds statt `(contract, tokenId)` und hängt an keiner `v1`-Route, und die
+> Suche matcht einen Wert je Anfrage. `[Schlussfolgerung]` „Ein bis zwei Aufrufe" ist für
+> zwanzig Karten nicht erreichbar; ein Detailaufruf je Karte ergibt 20 Aufrufe je
+> Seitenaufruf gegen 600 Anfragen je Minute. **A11 ist damit nicht vertragsreif** — die
+> Richtungsentscheidung (Bündel-Endpunkt anfragen · je Contract holen · A11 fallen lassen)
+> steht in Abschnitt 4 der Befunddatei und liegt bei Wolfgang.
 **Frage:** Bekommt die Übersicht ein Migrationspaket (A11), oder bleibt `nft_metadata` dauerhaft
 ihre Metadatenquelle?
 `[Schlussfolgerung]` Bei „bleibt lokal" fällt A11, und die R3-Zeile des Abbauplans muss fallen —
