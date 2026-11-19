@@ -13,7 +13,8 @@
  * - Die Regel ist nicht erfunden, sondern aus der Plattform übernommen:
  *   `packages/security/src/index.ts` (canonicalizeSignedRequest,
  *   createRequestSignature), Aufrufbeispiel `scripts/hmac-request.ts`.
- *   Belegt gegen Plattform-Commit 5dda8c7.
+ *   Belegt gegen Plattform-Commit 5dda8c7; `packages/security` und
+ *   `scripts/hmac-request.ts` sind bis `cea0ea4` (Prüfstand E5) unverändert.
  * - Die kanonische Zeichenkette ist
  *   `[METHOD, pathname+search, sha256hex(body), timestamp].join("\n")`.
  *   Vier Zeilen, Reihenfolge fest. Jede Abweichung ergibt `invalid_signature`.

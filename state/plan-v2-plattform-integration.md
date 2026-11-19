@@ -549,9 +549,10 @@ einen Literaltyp, womit `if (FEATURES.X)` für TypeScript toter Code ist.
 bedingt; `isPlatformConfigured()` existiert dort schon für genau diesen Zweck. Die Pflichtprüfung
 liegt an derselben Stelle, und `check-env.js` bleibt Entwicklerhilfe (Befund 14: es liest Dateien,
 nicht die Prozessumgebung, und scheitert in der Zielumgebung vor der ersten Prüfung).
-### E5 — Prüfstand-Commit (V37) · `korrigiert 27.10.2026`
+### E5 — Prüfstand-Commit (V37) · `korrigiert 27.10.2026, auf Commit festgelegt 19.11.2026`
 
-**Gültige Entscheidung: die Plattform-`main`, derzeit `5df7493`.**
+**Gültige Entscheidung: der Commit `cea0ea4` der Plattform-`main`** (vorher: „die `main`, derzeit
+`5df7493`" — ein Zweig, kein Commit, daher drei Belegstände im Code).
 
 **Die Entscheidung vom 13.10.2026 war auf einer falschen Prämisse gebaut** und wird hier nicht
 überschrieben, sondern berichtigt. Damals fiel sie auf `5dda8c7` mit der Begründung, das sei „der
@@ -586,8 +587,8 @@ unabhängig von der Wahl. A1 braucht keine Änderung — belegt, nicht angenomme
   („Registrierung ist das Tor zum Indexing"). Geführt in `state/assumption-ledger.md`, fällig vor
   **A4b/A4c** — A3a, A7a, A9 und A11 hängen nicht daran.
 
-> **Nachtrag 19.11.2026 (Empfehlung, Bestätigung steht aus): Prüfstand `cea0ea4`.** `[Fakt]`
-> Die Plattform-`main` steht auf `cea0ea4` (12.11.2026, #23); `5df7493`, `2812315` und
+> **Nachtrag 19.11.2026 (entschieden): Prüfstand `cea0ea4`.** `[Fakt]` Die Plattform-`main`
+> steht auf `cea0ea4` (12.11.2026, #23); `5df7493`, `2812315` und
 > `4da567a` sind Vorfahren davon, `5dda8c7` weiter nicht. `[Fakt]` Zwischen `5dda8c7` und
 > `cea0ea4` sind `packages/security`, `api-auth.ts` und `api-response.ts` unverändert (leerer
 > `git diff --stat`); die lesenden `v1`-Routen sind seit `7915b52` unverändert. `[Fakt]` Neu
@@ -600,8 +601,9 @@ unabhängig von der Wahl. A1 braucht keine Änderung — belegt, nicht angenomme
 > kennt den `409 collection_disabled` nicht und fasst ihn als `PlatformResponseError` mit
 > `platformCode` — nicht falsch, aber ohne eigene Übersetzung; das gehört in A4c, nicht
 > in A3b. Die Belegzeilen im Code (`signing.ts`, `signing.test.ts`, `schemas.ts`,
-> `src/app/api/collections/`) auf `cea0ea4` zu ziehen, ist eine eigene Änderung mit grünem
-> Testlauf (V37).
+> `src/app/api/collections/`) sind am 19.11.2026 auf `cea0ea4` nachgezogen, als eigene
+> Änderung mit grünem `npm run check` (V37). Ein künftiger Versionssprung ist wieder eine
+> eigene Änderung.
 
 ### E6 — `/api/marketplace/items` und die Suche · `entschieden 13.10.2026, Beleg korrigiert 19.11.2026`
 **Entscheidung: A11 wird gebaut.** Die Übersicht bezieht ihre Metadaten künftig aus der

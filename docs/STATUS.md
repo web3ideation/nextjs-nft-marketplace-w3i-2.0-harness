@@ -69,8 +69,8 @@ Code brauchen: E4 (Ort des Feature-Flags, blockiert A2) und E5
   abnehmbar; die Pakete selbst sind baubar. Einzelheiten im Plan, Abschnitt 3.
 - Offene Entscheidungen, alle in `state/plan-v2-plattform-integration.md`
   Abschnitt 6: **E4** Ort des Feature-Flags (blockiert A2) · **E5**
-  Prüfstand-Commit V37 (blockiert A3–A11; Empfehlung `cea0ea4`, Bestätigung
-  steht aus) · **E6** `/api/marketplace/items` und die Suche: der negative
+  Prüfstand-Commit V37 (blockiert A3–A11; **entschieden 19.11.2026:
+  `cea0ea4`**, Belegzeilen im Code nachgezogen) · **E6** `/api/marketplace/items` und die Suche: der negative
   Beleg vom 13.11.2026 (`state/befund-a11-aufrufzahl.md`) ist am 19.11.2026
   widerrufen — `POST /api/v1/tokens/discover` bündelt bis zu 500 Token, A11
   wird über `discoverTokens` gebaut, Vorbehalte (schreibende Wirkung,

@@ -8,7 +8,8 @@
  *   nachgerechnet. Ein Test, der die Signatur mit derselben Funktion bildet,
  *   die er prüfen soll, prüft nur, dass zwei Aufrufe gleich ausgehen — er
  *   würde eine falsche kanonische Zeichenkette mitmachen. Die Werte stammen aus
- *   der Formel der Plattform (packages/security/src/index.ts, Commit 5dda8c7),
+ *   der Formel der Plattform (packages/security/src/index.ts, Commit 5dda8c7;
+ *   bis `cea0ea4`, dem Prüfstand E5, unverändert),
  *   ausgerechnet mit node:crypto außerhalb dieses Codes.
  * - Wer sie ändern muss, hat entweder die Regel gebrochen oder die Plattform
  *   hat sie geändert. Beides ist ein Halt, kein Nachziehen der Zahlen.
