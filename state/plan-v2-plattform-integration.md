@@ -586,7 +586,24 @@ unabhängig von der Wahl. A1 braucht keine Änderung — belegt, nicht angenomme
   („Registrierung ist das Tor zum Indexing"). Geführt in `state/assumption-ledger.md`, fällig vor
   **A4b/A4c** — A3a, A7a, A9 und A11 hängen nicht daran.
 
-### E6 — `/api/marketplace/items` und die Suche · `entschieden 13.10.2026`
+> **Nachtrag 19.11.2026 (Empfehlung, Bestätigung steht aus): Prüfstand `cea0ea4`.** `[Fakt]`
+> Die Plattform-`main` steht auf `cea0ea4` (12.11.2026, #23); `5df7493`, `2812315` und
+> `4da567a` sind Vorfahren davon, `5dda8c7` weiter nicht. `[Fakt]` Zwischen `5dda8c7` und
+> `cea0ea4` sind `packages/security`, `api-auth.ts` und `api-response.ts` unverändert (leerer
+> `git diff --stat`); die lesenden `v1`-Routen sind seit `7915b52` unverändert. `[Fakt]` Neu
+> seit `2812315` ist der Collection-Status-Guard (#22): die Refresh-Routen antworten
+> `409 collection_disabled`, die Discover-Routen melden je Eintrag `failed` mit Meldung, und
+> `POST /api/v1/collections/:chainId/:contractAddress/status` setzt `active`/`disabled`.
+> `[Schlussfolgerung]` Die „offene Annahme" oben (Guard nur auf dem unvereinten Branch) ist
+> überholt: der Guard liegt auf `main`. Der Eintrag in `state/assumption-ledger.md` ist
+> nachzuführen, vor A4b/A4c am Plattform-Code zu lesen. `[Fakt]` `normalizePlatformFailure`
+> kennt den `409 collection_disabled` nicht und fasst ihn als `PlatformResponseError` mit
+> `platformCode` — nicht falsch, aber ohne eigene Übersetzung; das gehört in A4c, nicht
+> in A3b. Die Belegzeilen im Code (`signing.ts`, `signing.test.ts`, `schemas.ts`,
+> `src/app/api/collections/`) auf `cea0ea4` zu ziehen, ist eine eigene Änderung mit grünem
+> Testlauf (V37).
+
+### E6 — `/api/marketplace/items` und die Suche · `entschieden 13.10.2026, Beleg korrigiert 19.11.2026`
 **Entscheidung: A11 wird gebaut.** Die Übersicht bezieht ihre Metadaten künftig aus der
 Plattform; die R3-Zeile des Abbauplans bleibt damit gültig und bekommt ihren Ersatz. Vor dem
 A11-Vertrag ist zu belegen, dass eine Übersicht mit zwanzig Karten mit ein bis zwei
@@ -594,22 +611,34 @@ Plattform-Aufrufen auskommt — die Spec behauptet das, v1 übernahm es ungeprü
 ist A11 der Ort, an dem das Fensterlimit zuerst reißt. Die Freitextsuche (Befund 17) gehört
 damit zu A11, nicht zu A9.
 
-> **Der Beleg ist am 13.11.2026 geführt und fällt negativ aus:
-> `state/befund-a11-aufrufzahl.md`.** `[Fakt]` Die Plattform hat auf `origin/main`
-> (`4da567a`) keinen Endpunkt, der eine gewählte Menge von Token liefert — weder die
-> Listenroute noch `listTokens` kennen einen Filter auf Token-IDs, `findTokensByIds` nimmt
-> MongoDB-ObjectIds statt `(contract, tokenId)` und hängt an keiner `v1`-Route, und die
-> Suche matcht einen Wert je Anfrage. `[Schlussfolgerung]` „Ein bis zwei Aufrufe" ist für
-> zwanzig Karten nicht erreichbar; ein Detailaufruf je Karte ergibt 20 Aufrufe je
-> Seitenaufruf gegen 600 Anfragen je Minute. **A11 ist damit nicht vertragsreif.**
+> **Der Beleg vom 13.11.2026 (`state/befund-a11-aufrufzahl.md`) fiel negativ aus und ist am
+> 19.11.2026 widerrufen.** Er hatte `POST /api/v1/tokens/discover` übersehen. `[Fakt]` Die
+> Route nimmt bis zu 500 `(chainId, contractAddress, tokenId)` je Aufruf und liefert bekannte
+> Token sofort als `discoveryStatus: ready` mit `token` und `collection` in der Anreicherung
+> der Detailroute; unbekannte werden eingereiht. Sie besteht seit `8513e46` (19.05.2026), liegt
+> in `7915b52` wie in `cea0ea4`, und unser Client kennt sie als `discoverTokens`
+> (`src/lib/nft-data-platform/write.ts`, stückelt auf 500, filtert gegen die Whitelist).
+> `[Schlussfolgerung]` Eine Übersicht mit zwanzig Karten kommt mit **einem** Aufruf aus. A11
+> ist nicht blockiert, und die Anfrage nach einem Bündel-Endpunkt entfällt.
 >
-> **Richtung entschieden am 19.11.2026: Weg (a).** Die Anfrage nach einem Bündel-Endpunkt
-> geht an die Plattform-Seite (`state/anfrage-plattform-token-buendel.md`, Entwurf); A11 ruht
-> bis zur Antwort. Weg (b) entfällt — er umgeht die Lücke und degradiert still. Weg (c)
-> ist der Rückfall: bleibt die Antwort bis zu einem Stichtag aus, fällt A11, die R3-Zeile
-> des Abbauplans fällt mit, und das Zielbild in Abschnitt 2 wird enger formuliert.
-> `[offene Frage]` Der Stichtag ist noch nicht gesetzt. A9 hängt weiter an E6 (Suche, Befund
-> 17), nicht an der Aufrufzahl.
+> **Richtung seit 19.11.2026:** A11 wird gebaut, über `discoverTokens`. Weg (b) und die Anfrage
+> an die Plattform entfallen; Weg (c) bleibt nur, falls die Vorbehalte unten nicht zu lösen
+> sind. **Vorbehalte, im A11-Vertrag zu klären:**
+>
+> - `[Fakt]` Die Route ist **schreibend** für Unbekanntes: je fehlendem Token ein
+>   `refresh-token`-Job mit `forceMetadata: true`, je Contract ein RPC-Bytecode-Check.
+> - `[Fakt]` Die Job-ID ist deterministisch; ein laufender Job wird nicht doppelt angelegt.
+>   Ein **fehlgeschlagener** oder — wegen `forceMetadata` — ein **abgeschlossener** Job wird
+>   bei jedem Aufruf neu eingereiht. `[Schlussfolgerung]` Ein Token, das nie indexiert wird,
+>   löst bei jedem Seitenaufruf der Übersicht neue Arbeit aus. A11 braucht eine
+>   Drosselung auf unserer Seite (je Token höchstens ein Discover je Zeitraum).
+> - `[Annahme]` Ein Bündelaufruf zählt im Fensterlimit als **ein** Aufruf. Ungeprüft;
+>   `x-ratelimit-remaining` vor und nach einem Aufruf mit mehreren Einträgen im Smoke-Lauf
+>   vergleichen.
+> - `[Fakt]` Die Übersicht darf nur Token anfragen, die wir als aktives Listing kennen — nie
+>   den Gesamtbestand.
+>
+> A9 hängt weiter an E6 wegen der Suche (Befund 17), nicht wegen der Aufrufzahl.
 **Frage:** Bekommt die Übersicht ein Migrationspaket (A11), oder bleibt `nft_metadata` dauerhaft
 ihre Metadatenquelle?
 `[Schlussfolgerung]` Bei „bleibt lokal" fällt A11, und die R3-Zeile des Abbauplans muss fallen —

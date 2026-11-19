@@ -1,6 +1,28 @@
 <!-- Ziel-Pfad im Repo: state/befund-a11-aufrufzahl.md -->
 # Befund — Aufrufzahl der Marktplatz-Übersicht (E6, vor dem A11-Vertrag)
 
+> **KORREKTUR 19.11.2026 — das Ergebnis dieses Befunds ist widerrufen.**
+> `[Fakt]` `POST /api/v1/tokens/discover` wurde nicht geprüft. Die Route nimmt bis zu 500
+> `(chainId, contractAddress, tokenId)` je Aufruf, liefert bekannte Token als
+> `discoveryStatus: ready` mit `token` und `collection` (dieselbe Anreicherung wie die
+> Detailroute, `serializeEnrichedTokens`) und reiht unbekannte ein. Sie besteht seit
+> `8513e46` (19.05.2026), liegt in `7915b52`, `2812315`, `4da567a` und `cea0ea4`, steht in
+> `docs/nft-api.md` der Plattform mit genau diesem Anwendungsfall („ein anderes System weiß,
+> welche NFTs im Frontend erscheinen") und ist in unserem Client als `discoverTokens` gebaut.
+> `[Schlussfolgerung]` Die Aussage „die Plattform hat keinen Endpunkt, der eine gewählte
+> Menge von Token liefert" ist falsch; eine Übersicht mit zwanzig Karten braucht **einen**
+> Aufruf. Die Abschnitte 1–3 bleiben als Beleg dafür stehen, **welche** Wege geprüft wurden;
+> Abschnitt 4 (die drei Wege) und Abschnitt 5 sind überholt. Die Folge steht in
+> `state/plan-v2-plattform-integration.md`, Abschnitt 6, E6 — dort auch die Vorbehalte:
+> schreibende Wirkung für Unbekanntes, Neu-Einreihen fehlgeschlagener und wegen
+> `forceMetadata` auch abgeschlossener Jobs, Zählung im Fensterlimit ungeprüft.
+>
+> `[Fakt]` Ursache: Die Prüfung ging die **Lese**-Routen durch (`tokens`, `search`) und die
+> Hilfsfunktion `findTokensByIds`; die Discover-Route gilt in unserem Code als Schreib-/
+> Anmeldeweg (`write.ts`) und wurde deshalb nicht als Lesezugriff gesucht. Eine Suche nach
+> Eingaben vom Typ `(chainId, contractAddress, tokenId)` in `apps/web/src/app/api/v1/` hätte
+> sie gefunden.
+
 Stand: 13.11.2026 · Erhoben am Plattform-Code, nicht am Migrationsdokument.
 Evidenz-Marker wie im Plan: `[Fakt]` belegt · `[Schlussfolgerung]` abgeleitet ·
 `[Annahme]` ungeprüft.
@@ -10,8 +32,9 @@ A11-Vertrag den Beleg, „dass eine Übersicht mit zwanzig Karten mit ein bis zw
 Plattform-Aufrufen auskommt — die Spec behauptet das, v1 übernahm es ungeprüft, und ohne
 Beleg ist A11 der Ort, an dem das Fensterlimit zuerst reißt."
 
-**Ergebnis in einem Satz:** Die Behauptung ist **widerlegt**. Die Plattform hat keinen
-Endpunkt, der eine gewählte Menge von Token in einem Aufruf liefert.
+**Ergebnis in einem Satz:** ~~Die Behauptung ist **widerlegt**. Die Plattform hat keinen
+Endpunkt, der eine gewählte Menge von Token in einem Aufruf liefert.~~ **Widerrufen, siehe
+Korrektur oben.**
 
 ---
 
