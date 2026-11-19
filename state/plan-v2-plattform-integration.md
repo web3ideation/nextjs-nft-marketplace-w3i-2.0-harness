@@ -593,6 +593,23 @@ A11-Vertrag ist zu belegen, dass eine Übersicht mit zwanzig Karten mit ein bis 
 Plattform-Aufrufen auskommt — die Spec behauptet das, v1 übernahm es ungeprüft, und ohne Beleg
 ist A11 der Ort, an dem das Fensterlimit zuerst reißt. Die Freitextsuche (Befund 17) gehört
 damit zu A11, nicht zu A9.
+
+> **Der Beleg ist am 13.11.2026 geführt und fällt negativ aus:
+> `state/befund-a11-aufrufzahl.md`.** `[Fakt]` Die Plattform hat auf `origin/main`
+> (`4da567a`) keinen Endpunkt, der eine gewählte Menge von Token liefert — weder die
+> Listenroute noch `listTokens` kennen einen Filter auf Token-IDs, `findTokensByIds` nimmt
+> MongoDB-ObjectIds statt `(contract, tokenId)` und hängt an keiner `v1`-Route, und die
+> Suche matcht einen Wert je Anfrage. `[Schlussfolgerung]` „Ein bis zwei Aufrufe" ist für
+> zwanzig Karten nicht erreichbar; ein Detailaufruf je Karte ergibt 20 Aufrufe je
+> Seitenaufruf gegen 600 Anfragen je Minute. **A11 ist damit nicht vertragsreif.**
+>
+> **Richtung entschieden am 19.11.2026: Weg (a).** Die Anfrage nach einem Bündel-Endpunkt
+> geht an die Plattform-Seite (`state/anfrage-plattform-token-buendel.md`, Entwurf); A11 ruht
+> bis zur Antwort. Weg (b) entfällt — er umgeht die Lücke und degradiert still. Weg (c)
+> ist der Rückfall: bleibt die Antwort bis zu einem Stichtag aus, fällt A11, die R3-Zeile
+> des Abbauplans fällt mit, und das Zielbild in Abschnitt 2 wird enger formuliert.
+> `[offene Frage]` Der Stichtag ist noch nicht gesetzt. A9 hängt weiter an E6 (Suche, Befund
+> 17), nicht an der Aufrufzahl.
 **Frage:** Bekommt die Übersicht ein Migrationspaket (A11), oder bleibt `nft_metadata` dauerhaft
 ihre Metadatenquelle?
 `[Schlussfolgerung]` Bei „bleibt lokal" fällt A11, und die R3-Zeile des Abbauplans muss fallen —
