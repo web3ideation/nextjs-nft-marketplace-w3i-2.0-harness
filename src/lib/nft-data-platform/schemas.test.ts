@@ -189,12 +189,23 @@ describe('pageInfo', () => {
 
 describe('Erfolgs-Hülle', () => {
     it('erwartet die Nutzlast flach neben ok, nicht in einer data-Hülle', () => {
-        expect(tokenDetailResponseSchema.safeParse({ ok: true, token }).success).toBe(true);
-        expect(tokenDetailResponseSchema.safeParse({ ok: true, data: { token } }).success).toBe(false);
+        expect(tokenDetailResponseSchema.safeParse({ ok: true, item: token }).success).toBe(true);
+        expect(tokenDetailResponseSchema.safeParse({ ok: true, data: { item: token } }).success).toBe(
+            false
+        );
+    });
+
+    it('erwartet das Token in item, nicht in token — beide Einzelobjekt-Endpunkte heissen es item', () => {
+        // Die Falle, in die dieser Auftrag selbst getappt ist: das Schema hiess
+        // `token`, die Plattform heisst es `item`, und beides laeuft im Gate
+        // gruen durch, weil die Attrappe dem Schema folgte und nicht der
+        // Plattform. Sichtbar geworden waere es erst beim ersten echten Lauf,
+        // als 502 ohne Rueckfall.
+        expect(tokenDetailResponseSchema.safeParse({ ok: true, token }).success).toBe(false);
     });
 
     it('weist ok: false ab — Fehlerantworten gehen durch normalizePlatformFailure', () => {
-        expect(tokenDetailResponseSchema.safeParse({ ok: false, token }).success).toBe(false);
+        expect(tokenDetailResponseSchema.safeParse({ ok: false, item: token }).success).toBe(false);
     });
 });
 

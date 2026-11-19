@@ -35,6 +35,12 @@ import type {
     tokenCreatorSchema,
     tokenDetailResponseSchema,
     tokenOwnersResponseSchema,
+    walletInventoryItemSchema,
+    walletInventoryResponseSchema,
+    discoveryStatusSchema,
+    discoverItemSchema,
+    discoverResponseSchema,
+    refreshJobResponseSchema,
 } from '@/lib/nft-data-platform/schemas';
 
 export type PlatformPageInfo = z.infer<typeof pageInfoSchema>;
@@ -66,3 +72,12 @@ export type PlatformPage<T> = {
     items: T[];
     pageInfo: PlatformPageInfo;
 };
+
+// ─── Paket A3b — Wallet-Inventar, Discover, Refresh ──────────────────────────
+
+export type PlatformWalletInventoryItem = z.infer<typeof walletInventoryItemSchema>;
+export type PlatformWalletInventoryResponse = z.infer<typeof walletInventoryResponseSchema>;
+export type PlatformDiscoveryStatus = z.infer<typeof discoveryStatusSchema>;
+export type PlatformDiscoverItem = z.infer<typeof discoverItemSchema>;
+export type PlatformDiscoverResponse = z.infer<typeof discoverResponseSchema>;
+export type PlatformRefreshJobResponse = z.infer<typeof refreshJobResponseSchema>;

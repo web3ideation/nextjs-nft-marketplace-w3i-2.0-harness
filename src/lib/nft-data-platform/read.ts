@@ -117,7 +117,7 @@ export async function getTokenDetail(
     const path = `/api/v1/tokens/${identity.chainId}/${identity.contractAddress}/${identity.tokenId}`;
     const { data } = await requestPlatform({ method: 'GET', path, credentials: 'read' }, deps);
 
-    return parseOrThrow(tokenDetailResponseSchema, data, path).token;
+    return parseOrThrow(tokenDetailResponseSchema, data, path).item;
 }
 
 /**
@@ -176,7 +176,7 @@ export async function getCollectionDetail(
     const path = `/api/v1/collections/${identity.chainId}/${identity.contractAddress}`;
     const { data } = await requestPlatform({ method: 'GET', path, credentials: 'read' }, deps);
 
-    return parseOrThrow(collectionDetailResponseSchema, data, path).collection;
+    return parseOrThrow(collectionDetailResponseSchema, data, path).item;
 }
 
 /**
