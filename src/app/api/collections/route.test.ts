@@ -14,7 +14,7 @@
  * - MongoDB und die Lesemethode der Plattform sind ersetzt. Die Route hat
  *   keine einspeisbare Datenquelle; ihr eine zu geben wäre ein Umbau aller
  *   Routen.
- * - Die Attrappe der Plattform folgt dem **Plattform-Code** (Stand `2812315`),
+ * - Die Attrappe der Plattform folgt dem **Plattform-Code** (Stand `cea0ea4`),
  *   nicht dem eigenen Schema — am 30.10.2026 war die umgekehrte Reihenfolge
  *   die Ursache dafür, dass zwei falsche Hüllen grün durchliefen.
  */

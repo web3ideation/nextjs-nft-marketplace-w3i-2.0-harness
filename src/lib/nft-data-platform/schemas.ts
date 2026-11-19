@@ -36,8 +36,10 @@
  *   Wallet-Inventar legt eine eigene, kürzere Zusammenfassung bei
  *   (`walletCollectionSummarySchema`). Ein geteiltes Schema für beide wäre
  *   bequem und falsch.
- * - Erhoben gegen Plattform-`main` (Prüfstand E5); Hüllen und Teilformen am
- *   30.10.2026 gegen `2812315` nachgelesen. Zuvor erhoben gegen `5df7493`:
+ * - Erhoben gegen Plattform-`main` (Prüfstand E5, `cea0ea4`); Hüllen und
+ *   Teilformen am 19.11.2026 gegen `cea0ea4` nachgelesen — Serializer und
+ *   Lese-Routen sind gegenüber `2812315` unverändert. Davor am 30.10.2026
+ *   gegen `2812315` nachgelesen und zuerst gegen `5df7493` erhoben:
  *   `packages/db/src/index.ts` (Dokumenttypen), `apps/web/src/lib/token-response.ts`
  *   und `collection-response.ts` (Anreicherung), die Routen unter
  *   `apps/web/src/app/api/v1/`.

@@ -21,7 +21,7 @@
  *   `[Fakt]` Die Listenroute der Plattform ruft `serializeEnrichedCollections`
  *   — dieselbe Funktion, die auch die Detailroute benutzt
  *   (`apps/web/src/lib/collection-response.ts`, Zeilen 12 und 22, Stand
- *   `2812315`). Die Listenantwort trägt pro Element also schon `preview`,
+ *   `cea0ea4`). Die Listenantwort trägt pro Element also schon `preview`,
  *   `recentTokens`, `indexedTokenCount` und `holderCount`. Ein Aufruf mit
  *   `limit=200` liefert die Metadaten für bis zu 200 Collections; ein
  *   Detailaufruf je Contract wäre genau die Aufrufzahl, die hier nicht
