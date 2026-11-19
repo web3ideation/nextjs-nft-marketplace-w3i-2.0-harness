@@ -641,6 +641,15 @@ damit zu A11, nicht zu A9.
 >   den Gesamtbestand.
 >
 > A9 hängt weiter an E6 wegen der Suche (Befund 17), nicht wegen der Aufrufzahl.
+>
+> **E6-Rest, offen: die Freitextsuche.** `[Schlussfolgerung]` Der Satz oben, die Suche gehöre zu
+> A11, trägt nicht mehr: die Route wählt ihre Token in MongoDB (Suche, Namenssortierung und
+> Metadatenfilter laufen auf dem `$lookup` zu `nft_metadata`), und die Plattform kann nur die
+> Anzeigewerte der gewählten Seite überlagern. A11 (`state/tasks/a11-marketplace-items-plattform-lesen.md`)
+> lässt die Suche deshalb lokal. Zu entscheiden: dauerhaft lokal — dann baut R3 nur die
+> Anzeigerolle von `nft_metadata` ab, nicht die Quelle, und das Zielbild in Abschnitt 2 ist
+> enger zu formulieren — oder über `GET /api/v1/search` (anderer Umfang: Gesamtbestand statt
+> aktive Listings, keine Preis- und Verkäuferfilter).
 **Frage:** Bekommt die Übersicht ein Migrationspaket (A11), oder bleibt `nft_metadata` dauerhaft
 ihre Metadatenquelle?
 `[Schlussfolgerung]` Bei „bleibt lokal" fällt A11, und die R3-Zeile des Abbauplans muss fallen —
