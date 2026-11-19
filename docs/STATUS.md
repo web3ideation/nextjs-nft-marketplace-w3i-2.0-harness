@@ -70,7 +70,10 @@ Code brauchen: E4 (Ort des Feature-Flags, blockiert A2) und E5
 - Offene Entscheidungen, alle in `state/plan-v2-plattform-integration.md`
   Abschnitt 6: **E4** Ort des Feature-Flags (blockiert A2) · **E5**
   Prüfstand-Commit V37 (blockiert A3–A11) · **E6** `/api/marketplace/items`
-  und die Suche (blockiert A9, A11; berührt R3 des Abbauplans) · **E7**
+  und die Suche: Beleg negativ (`state/befund-a11-aufrufzahl.md`), Richtung
+  Weg (a) am 19.11.2026 entschieden — Bündel-Endpunkt bei der Plattform
+  anfragen (`state/anfrage-plattform-token-buendel.md`), A11 ruht bis zur
+  Antwort, Stichtag offen, Rückfall Weg (c) (berührt R3 des Abbauplans) · **E7**
   `/api/user/nfts` (blockiert A5) · **E8** Chain- und Approval-Block
   (blockiert A7c) · **E1** Befüllung des Rückfallwegs — jetzt fällig **vor A6**
   statt vor Tor T2, und um einen dritten Weg erweitert · **E2**
