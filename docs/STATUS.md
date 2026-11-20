@@ -72,9 +72,10 @@ Code brauchen: E4 (Ort des Feature-Flags, blockiert A2) und E5
   Prüfstand-Commit V37 (blockiert A3–A11; **entschieden 19.11.2026:
   `cea0ea4`**, Belegzeilen im Code nachgezogen) · **E6** `/api/marketplace/items` und die Suche: der negative
   Beleg vom 13.11.2026 (`state/befund-a11-aufrufzahl.md`) ist am 19.11.2026
-  widerrufen — `POST /api/v1/tokens/discover` bündelt bis zu 500 Token, A11
-  wird über `discoverTokens` gebaut, Vorbehalte (schreibende Wirkung,
-  Neu-Einreihen von Jobs, Fensterzählung) im A11-Vertrag zu klären · **E7**
+  widerrufen — `POST /api/v1/tokens/discover` bündelt bis zu 500 Token, A11 wird über
+  `discoverTokens` gebaut, nach dem Advisor-Pass vom 19.11.2026 geteilt in **A11a**
+  (Überlagerung) und **A11b** (Schutz; Voraussetzung für die Auslieferung), Plan
+  `state/plan-v2-a11-marketplace-items.md`; die Suche bleibt als E6-Rest offen · **E7**
   `/api/user/nfts` (blockiert A5) · **E8** Chain- und Approval-Block
   (blockiert A7c) · **E1** Befüllung des Rückfallwegs — jetzt fällig **vor A6**
   statt vor Tor T2, und um einen dritten Weg erweitert · **E2**
