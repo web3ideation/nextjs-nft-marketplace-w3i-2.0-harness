@@ -1,7 +1,3 @@
-ÜBERHOLT (19.11.2026): Dieser Vertrag ist Plan v1 und durch den Advisor-Pass ersetzt. Gültig sind
-`state/plan-v2-a11-marketplace-items.md` und die Verträge `state/tasks/a11a-items-ueberlagerung.md`
-und `state/tasks/a11b-items-schutz.md`. Nicht bauen.
-
 SCHRITT 0: Arbeitsverzeichnis ausgeben und gegen das im Auftrag genannte
 Zielverzeichnis prüfen. Bei Abweichung: abbrechen, melden, nichts ändern.
 Danach: `git status` und `git branch -vv` zeigen, Branch muss
@@ -10,6 +6,10 @@ anlegen). Danach `npm run check` laufen lassen (erwartet: Exit 0). Ist er rot,
 anhalten und melden.
 
 Zielverzeichnis: C:\Users\hoffm\Programming\nextjs-nft-marketplace-w3i-2.0-harness
+
+ÜBERHOLT (19.11.2026) — NICHT BAUEN: Dieser Vertrag ist Plan v1 und durch den Advisor-Pass
+ersetzt. Gültig sind `state/plan-v2-a11-marketplace-items.md` und die Verträge
+`state/tasks/a11a-items-ueberlagerung.md` und `state/tasks/a11b-items-schutz.md`.
 
 ## TASK: a11-marketplace-items-plattform-lesen
 

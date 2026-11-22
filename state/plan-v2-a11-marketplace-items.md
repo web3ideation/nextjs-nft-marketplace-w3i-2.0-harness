@@ -80,8 +80,9 @@ Last. Nur 429 ist unkritisch (`client.ts:420-427`).
   dort schon) und ein dritter, optionaler Parameter `options` an `discoverTokens`. Die Route
   nimmt **3 s und einen Versuch**. Das ist eine Änderung an A1/A3b-Code und wird im Vertrag
   ausdrücklich in den SCOPE genommen, mit Test.
-- **Ausfall-Merker** im gemeinsamen Cache: bei Unavailable, Timeout, Auth, Config und
-  RateLimit wird `platform:items-overlay:down` für 60 s gesetzt; solange er steht, ruft die
+- **Ausfall-Merker** im gemeinsamen Cache: bei **jedem gescheiterten Aufruf**, auch bei einem
+  `PlatformResponseError` (Entscheidung 20.11.2026, zweiter Advisor-Pass Befund 4), wird
+  `platform:items-overlay:down` für 60 s gesetzt; solange er steht, ruft die
   Route die Plattform nicht an und antwortet lokal mit `staleWarning: true`. Auth-Fehler
   (403, fehlender Scope — `write.ts` nennt das selbst als offen) gehören dazu, sonst schreibt
   jede Anfrage einen `error`-Log.

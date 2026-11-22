@@ -71,21 +71,37 @@ CONTEXT:
 
 SCOPE:
 1. `src/lib/nft-data-platform/client.ts`: `maxAttempts?: number` in `PlatformRequestOptions`,
-   statt `config.maxAttempts` verwendet, wenn gesetzt (alle vier Stellen). Test in
-   `client.test.ts`: ein Versuch bei `maxAttempts: 1`, auch bei 5xx und Timeout.
+   statt `config.maxAttempts` verwendet, wenn gesetzt (alle vier Stellen, `client.ts:412, 465,
+   498, 552`), mit `Math.max(1, …)` abgesichert — bei `maxAttempts ≤ 0` liefe die Schleife leer.
+   Test in `client.test.ts`: ein Versuch bei `maxAttempts: 1`, auch bei 5xx und Timeout; `0`
+   wird zu einem Versuch.
 2. `src/lib/nft-data-platform/write.ts`: `discoverTokens(identities, deps?, options?)` mit
-   `options: { timeoutMs?: number; maxAttempts?: number; signal?: AbortSignal }`, durchgereicht an
-   `requestPlatform`. **Dritter** Parameter, damit bestehende Aufrufer unverändert bleiben. Test in
-   `write.test.ts`.
+   `options: { timeoutMs?: number; maxAttempts?: number }`, durchgereicht an `requestPlatform`.
+   **Dritter** Parameter, damit bestehende Aufrufer unverändert bleiben (`discoverTokens` hat
+   keinen Produktionsaufrufer, `write.test.ts` ruft mit zwei Parametern). Kein `signal`: es hätte
+   keinen Verbraucher. Test in `write.test.ts`.
 3. `src/lib/nft-data-platform/mappers/marketplace-items.ts` — neu:
-   - `buildItemOverlayMap(requestedKeys, discoverItems)` → `{ overlays, notOverlaid }`.
+   - `buildItemOverlayMap(requestedKeys, discoverItems)` →
+     `{ overlays: Record<string, ItemOverlay>; notOverlaid: string[] }`.
+     **Nur Plain-Object und Array, keine `Map`, kein `Set`:** A11b legt den Wert über
+     `JSON.stringify` in den gemeinsamen Cache, und eine `Map` serialisiert zu `{}` — ein
+     Treffer bestünde dann still aus leeren Überlagerungen.
      Schlüssel `chainId:contractAddress(klein):tokenId` (Zeichenkette unverändert).
      `overlays` nur für `discoveryStatus === 'ready'` mit gesetztem `token`; `notOverlaid` =
      jeder **angefragte** Schlüssel ohne Überlagerung (`queued`, `failed`, `ready` ohne `token`,
-     nicht in der Antwort). Deshalb bekommt die Funktion die angefragten Schlüssel.
-   - `applyItemOverlay(item, overlay)` (rein): `metadata` feldweise — ein Feld der Plattform
-     ersetzt das lokale nur bei brauchbarem Wert (nicht `null`, nicht leer); `contract` **nur**
-     `name` und `symbol`, alles andere (`owner`, `tokenURI`, `totalSupply`, …) bleibt lokal.
+     nicht in der Antwort). `requestedKeys` ist die **volle, deduplizierte** Menge der Seite,
+     **vor** jedem Abzug (Pause, Chain-Abweichung — die kommen mit A11b je Anfrage dazu).
+   - `applyItemOverlay(item, overlay)` (rein), **Feldliste** (`DetailMetadataOverlay` hat zehn
+     Felder, `mappers/token-detail.ts:67-78`):
+     - einzeln überlagert, wenn der Plattformwert brauchbar ist (nicht `null`, nicht leer):
+       `name`, `description`, `externalUrl`, `animationUrl`;
+     - **als Einheit** überlagert: `image`, `imageOriginal`, `images`, `imageMeta` — nur dann,
+       wenn `image` nicht leer ist, sonst bleibt die **ganze** Gruppe lokal (kein Mischzustand
+       aus Plattform-`image` und lokalem `images.thumbnail`);
+     - bleiben lokal: `blurDataURL`, `attributes` (konservativ; ob die Karte sie liest, ist im
+       Bericht zu belegen);
+     - `contract` **nur** `name` und `symbol`; alles andere (`owner`, `tokenURI`,
+       `totalSupply`, …) bleibt lokal.
    - Mit den Mappern aus A7a bauen, kein zweiter Mapper.
 4. `src/app/api/marketplace/items/route.ts`, **nach** dem Aggregationslauf, **vor** dem Schreiben
    in den Antwort-Cache:
@@ -102,8 +118,16 @@ SCOPE:
      `pagination`, `filters`. `staleWarning` ist wahr, wenn mindestens eine Karte **gar nicht**
      überlagert werden konnte oder der Aufruf scheiterte; ein lokal gebliebenes **Feld** löst es
      **nicht** aus.
-   - **Vorläufige Cache-Regel (A11b ersetzt sie):** eine Antwort mit `staleWarning: true` wird
-     nicht in den Antwort-Cache geschrieben.
+   - **Überlagerung bewusst aus** (Flag aus oder `platformOverlay=false`): kein Versuch,
+     `dataSource: 'local-fallback'`, `staleWarning: false`, Antwort **cachebar** — dieser Pfad
+     muss ab dem Merge dem heutigen Verhalten entsprechen. `staleWarning: true` heißt „versucht
+     und nicht gelungen", nie „nicht versucht".
+   - **`isDefaultBrowseQuery`** (`route.ts:~145-171`) bekommt `platformOverlay !== 'false'`
+     in die Bedingung. Sonst schreibt `?platformOverlay=false` bei Miss eine nicht überlagerte
+     Antwort unter den Schlüssel der Standardansicht (15 s), und bei Treffer bekäme derselbe
+     Aufruf überlagerte Daten, obwohl er sie abgelehnt hat.
+   - **Vorläufige Cache-Regel (A11b ersetzt sie, samt dem zugehörigen Test):** eine Antwort mit
+     `staleWarning: true` wird nicht in den Antwort-Cache geschrieben.
    - Die lokalen `$lookup`s bleiben vollständig.
 5. `src/types/marketplace/enriched-nft.ts`: `dataSource?` und `staleWarning?` an
    `MarketplaceItemsResponse['data']`.
@@ -121,7 +145,10 @@ SCOPE:
      **je einen** `discoverTokens`-Aufruf · doppelte Identitäten werden einmal gesendet ·
      `platformOverlay=false` und Flag aus ergeben null Aufrufe und `local-fallback` · Ausfall
      ergibt 200, lokale Werte, `staleWarning: true` · `queued` behält den lokalen Namen · Antwort
-     mit `staleWarning` wird nicht gecacht · Aufruf trägt `timeoutMs: 3000, maxAttempts: 1`.
+     mit `staleWarning` wird nicht gecacht (**vorläufig, A11b ersetzt diesen Test**) · Aufruf
+     trägt `timeoutMs: 3000, maxAttempts: 1` · Flag aus und `platformOverlay=false` ergeben
+     `staleWarning: false` und eine cachebare Antwort · `?platformOverlay=false` mit sonst
+     unveränderten Standardparametern liest und schreibt den Standard-Cache **nicht**.
      Suche und Namenssortierung: **Struktur-Test** der gebauten Pipeline (`$match` auf
      `metadata.name`, `$sort` auf `sortName`) — kein Verhaltenstest, das ist mit gemocktem
      `aggregate` nicht möglich.
@@ -129,6 +156,9 @@ SCOPE:
    mit Belegstelle (Plattform-Discover-Route, Prüfstand `cea0ea4`), warum Suche und
    Namenssortierung lokal bleiben, und dass der Test die Zahl der `discoverTokens`-Aufrufe misst,
    nicht HTTP-Anfragen.
+9. Alle neuen Dateien (Mapper, beide Testdateien) tragen den Kopf nach
+   `docs/kommentar-standard.md`: `Datei`, `Zweck`, `Wird aufgerufen von`, `Wichtig`. Kein
+   Skript prüft das, die Definition of Done verlangt es.
 
 NICHT:
 - Drosselung, Ausfall-Merker, Überlagerungs-Cache oder die endgültige Cache-Semantik. Das ist

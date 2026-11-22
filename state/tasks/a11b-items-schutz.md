@@ -79,10 +79,17 @@ SCOPE:
 2. `src/lib/nft-data-platform/items-overlay-guard.ts` — neu, kapselt alles Zustandsbehaftete
    (Route bleibt lesbar):
    - **Ausfall-Merker:** `isPlatformMarkedDown()` / `markPlatformDown()`, Schlüssel
-     `platform:items-overlay:down`, TTL 60 s (benannte Konstante, begründet). Gesetzt, wenn
-     `translatePlatformError(...)` `allowLocalFallback: true` meldet (Ratenlimit, Auth, Config,
-     Timeout, Unavailable). Ein `PlatformResponseError` setzt ihn **nicht** (Formfehler ist kein
-     Ausfall; er bleibt auf Stufe `error` im Log).
+     `platform:items-overlay:down`, TTL 60 s (benannte Konstante, begründet). Gesetzt bei
+     **jedem gescheiterten Discover-Aufruf**, auch bei einem `PlatformResponseError`
+     (Formfehler; Entscheidung des Menschen vom 20.11.2026, zweiter Advisor-Pass Befund 4):
+     ein Formfehler bleibt bis zum Fix bestehen, und ohne Merker rufe jede nicht gecachte
+     Anfrage Discover erneut auf (3 s, Neu-Einreihungs-Last, `error`-Log). Das `error`-Log
+     bleibt in jedem Fall.
+   - **TTL in ganzen Sekunden:** `setSharedCacheValue` nimmt Sekunden und ruft
+     `redis.set(…, 'EX', ttl)`; eine nicht ganzzahlige Zahl scheitert dort, der Fehler wird
+     verschluckt, und Pause oder Merker wirken bei vorhandenem Redis nicht. Die Konstanten
+     bleiben in Millisekunden, die Umrechnung läuft über `Math.ceil(ms / 1000)` (wie
+     `route.ts:42`), mit Test auf ganzzahlige TTL.
    - **Drosselung je Identität:** Schlüssel
      `platform:discover:pause:<chainId>:<adresse klein>:<tokenId>`, TTL
      `DISCOVER_RETRY_PAUSE_MS` (Startwert zehn Minuten, begründet). `filterPaused(keys)` und
@@ -93,37 +100,64 @@ SCOPE:
      Hash der **sortierten** Identitätsschlüssel, `platform:items-overlay:page:v1:<hash>`,
      TTL 30 s (benannte Konstante). Wert: die Überlagerungskarte aus A11a in
      JSON-tauglicher Form (`overlays` und `notOverlaid`).
-3. `src/app/api/marketplace/items/route.ts`, Reihenfolge der Prüfungen vor dem Aufruf:
-   Überlagerungs-Cache der Seitenmenge (Treffer → **null** Aufrufe) → Ausfall-Merker gesetzt
-   (→ **null** Aufrufe, lokal, `staleWarning: true`) → pausierte Identitäten abziehen → ein
-   `discoverTokens`-Aufruf mit den Optionen aus A11a → Antwort in Überlagerungs-Cache schreiben
-   → `markPaused` für `queued`/`failed` der Plattform. Bei Fehler: `markPaused` **nicht**, aber
-   `markPlatformDown` nach der Regel oben.
+3. `src/app/api/marketplace/items/route.ts`. **Reihenfolge je Anfrage:** Tor (Flag,
+   `platformOverlay`) → Identitäten bilden, deduplizieren, Chain filtern (A11a SCOPE 4; der Hash
+   braucht sie) → Überlagerungs-Cache der Seitenmenge (Treffer → **null** Aufrufe; das ist auch
+   bei gesetztem Merker gewollt: ein Treffer liefert bis zu 30 s alte, bessere Daten) →
+   Ausfall-Merker gesetzt (→ **null** Aufrufe, lokal, `staleWarning: true`) → pausierte
+   Identitäten abziehen → ein `discoverTokens`-Aufruf mit den Optionen aus A11a → Antwort in
+   Überlagerungs-Cache schreiben → `markPaused` für `queued`/`failed` der Plattform. Bei Fehler:
+   `markPaused` **nicht**, aber `markPlatformDown`.
+   **`staleWarning` und `notOverlaid`:** `requestedKeys` ist die **volle**, deduplizierte Menge
+   (A11a). Pausierte Schlüssel und Chain-Abweichler kommen **je Anfrage** zu `notOverlaid` dazu
+   und werden **nicht** aus dem Cache gelesen. Der Cache-Wert enthält nur die Auskunft der
+   Plattform (`overlays`, `notOverlaid` aus der Antwort). Sonst wäre `staleWarning` bei Treffer
+   und bei Miss unterschiedlich.
+   **„Plattformfehler"** heißt ausschließlich: der Merker-Zweig nach einem Cache-Miss oder der
+   `catch` um den Aufruf. Ein Seitenmengen-Treffer bei gesetztem Merker ist **kein**
+   Plattformfehler.
 4. **Cache-Semantik** (ersetzt die vorläufige Regel aus A11a):
-   - **Plattformfehler** (Aufruf gescheitert oder Ausfall-Merker gesetzt): Antwort **nicht** in
-     den Antwort-Cache, und `Cache-Control` auf kurz bzw. `no-store` setzen statt
-     `s-maxage=10, stale-while-revalidate=30`.
+   - **Plattformfehler** (Aufruf gescheitert oder Merker-Zweig nach Miss, Definition in Nr. 3):
+     Antwort **nicht** in den Antwort-Cache, und `Cache-Control` auf kurz bzw. `no-store` setzen
+     statt `s-maxage=10, stale-while-revalidate=30`.
    - **Einzelne Karte nicht überlagerbar:** Antwort **wird** gecacht, `staleWarning: true` im
      Cache-Eintrag.
+   - **Überlagerung bewusst aus** (A11a): unverändert cachebar, `staleWarning: false`.
+   - **Der A11a-Test „Antwort mit `staleWarning` wird nicht gecacht" wird durch diese Regel
+     ersetzt**, nicht angepasst und nicht gemeldet: er war ausdrücklich vorläufig (A11a SCOPE 4
+     und 7).
    - Cache-Schlüssel der Standardansicht auf `…:v3`.
 5. Dateikopf der Route und des Guards: bis zu zehn Minuten Verzögerung, bis ein pausiertes Token
    wieder überlagert wird · ohne Redis wirken Merker, Pause und Cache je Prozess · das
    `LENIENT`-Limit der Route ist durch User-Agent-Wechsel umgehbar und hier nicht gelöst.
 6. `state/assumption-ledger.md`: Einträge für (a) Bündelaufruf zählt als ein Aufruf — vor
-   A10-Stufe-1 messen · (b) Produktion hat `REDIS_URL`, Zahl der Instanzen, CDN · (c) `LENIENT`-
-   Limit umgehbar, öffentliche Route verstärkt auf das `alpha-read`-Budget · (d) 30 s
-   Überlagerungs-Cache unkritisch · (e) `staleWarning` wird von keiner Oberfläche gelesen (Lücke
-   zu V32). Je Eintrag Vorbehalt und Fälligkeit, Format der vorhandenen Zeilen.
+   A10-Stufe-1 messen · (b) Produktion hat `REDIS_URL`, Zahl der Instanzen, CDN; ohne Redis
+   verdrängt der lokale Fallback (`LOCAL_CACHE_MAX_ENTRIES = 5000`, kleinstes `expiresAt`
+   zuerst) bei mehr als 5000 Pausenschlüsseln zuerst Merker (60 s) und Seitenmengen-Einträge
+   (30 s) · (c) `LENIENT`-Limit umgehbar, öffentliche Route verstärkt auf das
+   `alpha-read`-Budget · (d) 30 s Überlagerungs-Cache unkritisch · (e) `staleWarning` wird von
+   keiner Oberfläche gelesen (Lücke zu V32). **Format der vorhandenen Zeilen:**
+   `Datum | Annahme | Fundstelle | Status | Aufgelöst am` — **Vorbehalt und Fälligkeit stehen im
+   Text der Annahme** (es gibt dafür keine Spalten), `Status` = `offen`, `Aufgelöst am` leer.
 7. Tests:
-   - `items-overlay-guard.test.ts` (neu): Merker setzen/lesen/ablaufen · Pause je Identität ·
-     `filterPaused` lässt Nicht-Pausierte durch · Schlüssel unabhängig von der Reihenfolge der
-     Identitäten · Hash stabil.
+   - `items-overlay-guard.test.ts` (neu): Merker setzen/lesen/ablaufen, auch nach einem
+     `PlatformResponseError` · Pause je Identität · `filterPaused` lässt Nicht-Pausierte durch ·
+     Schlüssel unabhängig von der Reihenfolge der Identitäten · Hash stabil · TTL wird als
+     **ganze Sekunden** übergeben (`Math.ceil`) · **Round-Trip mit dem echten `shared-cache`**
+     (ohne `REDIS_URL` greift der Prozess-Fallback, `redis/client.ts:24`): ein Seitenmengen-Wert
+     kommt als Plain-Object zurück und ist nicht leer; ein `undefined` aus einem Mock zählt als
+     Miss (`== null`).
    - `route.test.ts` (aus A11a erweitern): dieselbe Seitenmenge unter anderer Sortierung →
      **ein** Aufruf in Summe · Cache-Treffer → null · `queued`-Identität wird beim zweiten
      Aufruf innerhalb der Pause nicht angefragt · Whitelist-Ablehnung wird **nicht** pausiert ·
      Merker gesetzt → null Aufrufe, `staleWarning: true`, `Cache-Control` ohne `s-maxage` ·
-     Plattformfehler → Antwort nicht im Antwort-Cache · einzelne nicht überlagerbare Karte →
-     Antwort **im** Antwort-Cache mit `staleWarning: true` · Schlüssel `…:v3`.
+     Plattformfehler (auch `PlatformResponseError`) → Antwort nicht im Antwort-Cache, Merker
+     gesetzt · einzelne nicht überlagerbare Karte → Antwort **im** Antwort-Cache mit
+     `staleWarning: true` · pausierte Identität und Chain-Abweichler → `staleWarning: true`
+     bei Treffer **und** bei Miss · Schlüssel `…:v3`. Der vorläufige A11a-Test „`staleWarning`
+     wird nicht gecacht" wird **ersetzt**.
+   - Neue Dateien tragen den Kopf nach `docs/kommentar-standard.md` (`Datei`, `Zweck`,
+     `Wird aufgerufen von`, `Wichtig`).
 
 NICHT:
 - Das `LENIENT`-Limit der Route ändern oder eine eigene Ratenbegrenzung daneben bauen.
@@ -158,10 +192,12 @@ ESCALATE:
   bauen: anhalten.
 - Ein bestehender A11a-Test kippt durch die neue Reihenfolge der Prüfungen: Befund melden,
   nicht den Test anpassen, bis klar ist, ob die Reihenfolge oder der Test falsch ist.
+  **Ausnahme:** der vorläufige Test „`staleWarning` wird nicht gecacht" ist vorgesehen ersetzt
+  (SCOPE 4) und löst keine Eskalation aus.
 - Der Überlagerungs-Cache liefert veraltete Überlagerungen nach einem erfolgreichen Refresh
   (Anzeige hängt hinter der Plattform): melden; 30 s sind eine Annahme, keine Messung.
-- Die Antwort-Cache-Regel (Nr. 4) widerspricht dem bestehenden Test der Standardansicht:
-  anhalten und melden.
+- Die Antwort-Cache-Regel (Nr. 4) widerspricht einem **anderen** bestehenden Test der
+  Standardansicht als dem oben genannten: anhalten und melden.
 - `npm run check` wird rot: Befunde melden, nicht durch `any` grün machen.
 
 FOLGT:
